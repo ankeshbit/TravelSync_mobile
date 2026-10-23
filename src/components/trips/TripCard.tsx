@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Trip, TripStatus } from '@/types/trip';
+import { Theme } from '@/constants/theme';
 
 interface TripCardProps {
   trip: Trip;
@@ -37,7 +38,7 @@ export function TripCard({ trip, onPress }: TripCardProps) {
         />
       ) : (
         <View style={styles.imagePlaceholder}>
-          <Ionicons name="map-outline" size={32} color="#94A3B8" />
+          <Ionicons name="map-outline" size={32} color={Theme.colors.textMuted} />
         </View>
       )}
 
@@ -54,24 +55,24 @@ export function TripCard({ trip, onPress }: TripCardProps) {
         <Text style={styles.name} numberOfLines={1}>{trip.name}</Text>
 
         <View style={styles.dateRow}>
-          <Ionicons name="calendar-outline" size={14} color="#64748B" />
+          <Ionicons name="calendar-outline" size={14} color={Theme.colors.textMuted} />
           <Text style={styles.dateText}>{formatDateRange(trip.startDate, trip.endDate)}</Text>
         </View>
 
         <View style={styles.footer}>
           <View style={styles.badge}>
-            <Ionicons name="people-outline" size={14} color="#2563EB" />
+            <Ionicons name="people-outline" size={13} color={Theme.colors.accent} />
             <Text style={styles.badgeText}>{membersCount} {membersCount === 1 ? 'member' : 'members'}</Text>
           </View>
 
           <View style={styles.badge}>
-            <Ionicons name="location-outline" size={14} color="#059669" />
+            <Ionicons name="location-outline" size={13} color={Theme.colors.status.success} />
             <Text style={styles.badgeText}>{placesCount} {placesCount === 1 ? 'stop' : 'stops'}</Text>
           </View>
 
           {trip.budgetPerPerson > 0 ? (
             <View style={styles.badge}>
-              <Ionicons name="cash-outline" size={14} color="#D97706" />
+              <Ionicons name="cash-outline" size={13} color={Theme.colors.status.warning} />
               <Text style={styles.badgeText}>{trip.currency} {trip.budgetPerPerson}</Text>
             </View>
           ) : null}
@@ -84,39 +85,34 @@ export function TripCard({ trip, onPress }: TripCardProps) {
 function getStatusColor(status: TripStatus) {
   switch (status) {
     case 'upcoming':
-      return { bg: '#EFF6FF', text: '#2563EB' };
+      return { bg: Theme.colors.status.successBg, text: Theme.colors.status.success };
     case 'completed':
-      return { bg: '#F0FDF4', text: '#16A34A' };
+      return { bg: Theme.colors.status.infoBg, text: Theme.colors.status.info };
     case 'cancelled':
-      return { bg: '#FEF2F2', text: '#DC2626' };
+      return { bg: Theme.colors.status.errorBg, text: Theme.colors.status.error };
     default:
-      return { bg: '#F8FAFC', text: '#475569' };
+      return { bg: Theme.colors.accentMuted, text: Theme.colors.accent };
   }
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.borderRadius.lg,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: Theme.colors.border,
     marginBottom: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   coverImage: {
     width: '100%',
     height: 140,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: Theme.colors.surfaceElevated,
   },
   imagePlaceholder: {
     width: '100%',
     height: 110,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: Theme.colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -127,21 +123,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   destination: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#2563EB',
+    color: Theme.colors.accent,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
     flex: 1,
     marginRight: 8,
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: Theme.borderRadius.xs,
   },
   statusText: {
     fontSize: 10,
@@ -151,8 +147,9 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 8,
+    letterSpacing: -0.2,
   },
   dateRow: {
     flexDirection: 'row',
@@ -162,28 +159,30 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 13,
-    color: '#64748B',
+    color: Theme.colors.textSecondary,
   },
   footer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: Theme.colors.border,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: Theme.borderRadius.sm,
     gap: 4,
   },
   badgeText: {
     fontSize: 12,
-    color: '#475569',
+    color: Theme.colors.textPrimary,
     fontWeight: '500',
   },
 });

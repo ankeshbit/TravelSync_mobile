@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getApiBaseUrl } from '@/config/env';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
+import { Theme } from '@/constants/theme';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -68,7 +69,7 @@ export default function ProfileScreen() {
             <Ionicons
               name={isEmailVerified ? 'checkmark-circle' : 'alert-circle'}
               size={14}
-              color={isEmailVerified ? '#16A34A' : '#D97706'}
+              color={isEmailVerified ? Theme.colors.status.success : Theme.colors.status.warning}
             />
             <Text style={[styles.badgeText, isEmailVerified ? styles.textSuccess : styles.textWarning]}>
               {isEmailVerified ? 'Email Verified' : 'Email Unverified'}
@@ -79,7 +80,7 @@ export default function ProfileScreen() {
             <Ionicons
               name={isDbSynced ? 'server' : 'cloud-offline'}
               size={14}
-              color={isDbSynced ? '#16A34A' : '#D97706'}
+              color={isDbSynced ? Theme.colors.status.success : Theme.colors.status.warning}
             />
             <Text style={[styles.badgeText, isDbSynced ? styles.textSuccess : styles.textWarning]}>
               {isDbSynced ? 'Postgres Synced' : 'Sync Pending'}
@@ -129,7 +130,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   content: {
     padding: 16,
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#2563EB',
+    backgroundColor: Theme.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -152,16 +153,16 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
   },
   name: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   email: {
     fontSize: 14,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     marginTop: 4,
     marginBottom: 12,
   },
@@ -178,27 +179,30 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
     gap: 4,
+    borderWidth: 1,
   },
   badgeSuccess: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(134, 169, 139, 0.12)',
+    borderColor: 'rgba(134, 169, 139, 0.25)',
   },
   badgeWarning: {
-    backgroundColor: '#FFFBEB',
+    backgroundColor: 'rgba(196, 163, 107, 0.12)',
+    borderColor: 'rgba(196, 163, 107, 0.25)',
   },
   badgeText: {
     fontSize: 12,
     fontWeight: '600',
   },
   textSuccess: {
-    color: '#16A34A',
+    color: Theme.colors.status.success,
   },
   textWarning: {
-    color: '#D97706',
+    color: Theme.colors.status.warning,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 10,
     marginLeft: 4,
   },
@@ -208,17 +212,17 @@ const styles = StyleSheet.create({
   infoRow: {
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: Theme.colors.border,
   },
   infoLabel: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     fontWeight: '500',
     marginBottom: 2,
   },
   infoValue: {
     fontSize: 14,
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     fontWeight: '600',
   },
   syncButton: {

@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import {
-  View,
   Text,
   ScrollView,
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCreateTrip } from '@/hooks/useTrips';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
+import { Theme } from '@/constants/theme';
 
 function getInitialDates() {
   const now = new Date();
@@ -140,7 +141,7 @@ export default function CreateTripScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   scrollContent: {
     padding: 20,
@@ -149,12 +150,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     marginBottom: 24,
   },
   row: {

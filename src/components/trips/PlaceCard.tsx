@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Place } from '@/types/trip';
+import { Theme } from '@/constants/theme';
 
 interface PlaceCardProps {
   place: Place;
@@ -14,7 +15,7 @@ export function PlaceCard({ place, onDelete }: PlaceCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.iconCircle}>
-        <Ionicons name={categoryIcon} size={20} color="#2563EB" />
+        <Ionicons name={categoryIcon} size={18} color={Theme.colors.accent} />
       </View>
 
       <View style={styles.details}>
@@ -22,7 +23,7 @@ export function PlaceCard({ place, onDelete }: PlaceCardProps) {
           <Text style={styles.name} numberOfLines={1}>{place.name}</Text>
           {onDelete ? (
             <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="trash-outline" size={16} color="#94A3B8" />
+              <Ionicons name="trash-outline" size={16} color={Theme.colors.textMuted} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -42,7 +43,7 @@ export function PlaceCard({ place, onDelete }: PlaceCardProps) {
 
         {place.note ? (
           <View style={styles.noteBox}>
-            <Ionicons name="document-text-outline" size={12} color="#64748B" />
+            <Ionicons name="document-text-outline" size={12} color={Theme.colors.textMuted} />
             <Text style={styles.noteText}>{place.note}</Text>
           </View>
         ) : null}
@@ -64,19 +65,21 @@ function getCategoryIcon(category?: string): keyof typeof Ionicons.glyphMap {
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.borderRadius.md,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: Theme.colors.border,
     marginBottom: 10,
     alignItems: 'flex-start',
   },
   iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EFF6FF',
+    width: 36,
+    height: 36,
+    borderRadius: Theme.borderRadius.sm,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -93,13 +96,13 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     flex: 1,
     marginRight: 8,
   },
   address: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textSecondary,
     marginBottom: 8,
   },
   metaRow: {
@@ -108,34 +111,38 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   categoryBadge: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Theme.borderRadius.xs,
   },
   categoryText: {
     fontSize: 11,
-    color: '#475569',
+    color: Theme.colors.textSecondary,
     textTransform: 'capitalize',
     fontWeight: '500',
   },
   duration: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: Theme.colors.textMuted,
   },
   noteBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.inputBackground,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: Theme.borderRadius.sm,
     marginTop: 6,
-    gap: 4,
+    gap: 6,
   },
   noteText: {
     fontSize: 11,
-    color: '#475569',
+    color: Theme.colors.textSecondary,
     fontStyle: 'italic',
     flex: 1,
   },

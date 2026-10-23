@@ -6,6 +6,7 @@ export interface CustomRequestConfig extends InternalAxiosRequestConfig {
   _firebaseRetry?: boolean;
 }
 
+// eslint-disable-next-line import/no-named-as-default-member
 export const api = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 15000,

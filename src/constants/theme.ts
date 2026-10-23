@@ -1,63 +1,102 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://unistyl.es/), etc.
- */
+export const Theme = {
+  colors: {
+    // Charcoal / Carbon / Graphite Palette
+    background: '#111210', // graphite.950 (App background)
+    sidebar: '#141512', // graphite.900 (Sidebar / input background)
+    surface: '#1B1C19', // graphite.850 (Card surface)
+    surfaceElevated: '#22231F', // graphite.800 (Elevated surface, icon containers)
+    surfaceHover: '#292A25', // graphite.750 (Pressed / hover surface)
+    inputBackground: '#141512', // Input background
 
-import { Platform } from 'react-native';
+    // Borders
+    border: '#30312C', // graphite.700 (Subtle border)
+    borderStrong: '#414239', // graphite.600 (Card hover / strong border)
+    borderFocus: '#A7A99A', // Sage accent border focus
 
-export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    // Typography
+    textPrimary: '#D5D3CA', // graphite.300 (Primary text)
+    textSecondary: '#A5A69B', // graphite.400 (Secondary text)
+    textMuted: '#85867C', // graphite.500 (Muted / placeholder text)
+
+    // Primary Accent (Sage)
+    accent: '#A7A99A', // Primary button & accent color
+    accentHover: '#B9BBAA', // Accent hover/pressed
+    accentText: '#171813', // High-contrast text on accent buttons
+    accentMuted: 'rgba(167, 169, 154, 0.15)',
+
+    // Google Brand Colors
+    googleBlue: '#4285F4',
+    googleGreen: '#34A853',
+    googleYellow: '#FBBC05',
+    googleRed: '#EA4335',
+
+    // Status Colors (Matching Website)
+    status: {
+      success: '#86A98B',
+      successBg: 'rgba(134, 169, 139, 0.12)',
+      warning: '#C4A36B',
+      warningBg: 'rgba(196, 163, 107, 0.12)',
+      error: '#C77F78',
+      errorBg: 'rgba(199, 127, 120, 0.15)',
+      errorBorder: 'rgba(199, 127, 120, 0.3)',
+      info: '#98A6A0',
+      infoBg: 'rgba(152, 166, 160, 0.12)',
+    },
   },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+  borderRadius: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    full: 9999,
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+    xxl: 40,
   },
 } as const;
-
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
 
 export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
+  ...Theme.spacing,
+  half: 4,
+  one: 8,
+  two: 12,
   three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  four: 20,
+  five: 24,
+  six: 28,
+  seven: 32,
+  eight: 40,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Fonts = {
+  regular: 'System',
+  bold: 'System',
+  semiBold: 'System',
+  medium: 'System',
+  mono: 'monospace',
+} as const;
+
+export type ThemeColor = 'text' | 'background' | 'backgroundElement' | 'backgroundSelected' | 'textSecondary';
+
+export const Colors: Record<'light' | 'dark', Record<ThemeColor, string>> = {
+  dark: {
+    text: Theme.colors.textPrimary,
+    background: Theme.colors.background,
+    backgroundElement: Theme.colors.surface,
+    backgroundSelected: Theme.colors.surfaceElevated,
+    textSecondary: Theme.colors.textSecondary,
+  },
+  light: {
+    text: Theme.colors.textPrimary,
+    background: Theme.colors.background,
+    backgroundElement: Theme.colors.surface,
+    backgroundSelected: Theme.colors.surfaceElevated,
+    textSecondary: Theme.colors.textSecondary,
+  },
+};

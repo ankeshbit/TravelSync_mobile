@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { Platform } from 'react-native';
 import {
   User as FirebaseUser,
   onAuthStateChanged,
@@ -7,6 +8,8 @@ import {
   updateProfile as updateFirebaseProfile,
   sendEmailVerification,
   signOut as firebaseSignOut,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import { getCurrentUser, logoutBackend } from '@/api/auth';
@@ -20,6 +23,7 @@ interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
+  loginWithGoogle: () => Promise<FirebaseUser | null>;
   registerWithEmail: (name: string, email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   syncBackendUser: () => Promise<User | null>;
@@ -48,11 +52,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(dbUser);
       return dbUser;
     } catch (err: any) {
-      // If error is 403 EMAIL_NOT_VERIFIED, keep firebaseUser but indicate email verification needed
       if (err?.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
         setError('Please verify your email address to access your trips.');
       } else {
-        // Backend DB sync failure could be network/offline
         console.warn('[AuthContext] Backend sync warning:', getErrorMessage(err));
       }
       return null;
@@ -91,6 +93,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (): Promise<FirebaseUser | null> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      if (Platform.OS === 'web') {
+        const result = await signInWithPopup(auth, provider);
+        setFirebaseUser(result.user);
+        await syncBackendUser();
+        return result.user;
+      } else {
+        // Native mobile flow
+        try {
+          const result = await signInWithPopup(auth, provider);
+          setFirebaseUser(result.user);
+          await syncBackendUser();
+          return result.user;
+        } catch (popupErr: any) {
+          // If popup is blocked on mobile webview, provide a helpful diagnostic
+          if (popupErr?.code === 'auth/popup-blocked') {
+            throw new Error('Sign-in window was blocked. Please allow popups or use email sign in.');
+          }
+          throw popupErr;
+        }
+      }
+    } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        return null; // User cancelled, no error banner needed
+      }
+      const friendlyMessage = getFirebaseErrorMessage(err);
+      setError(friendlyMessage);
+      throw new Error(friendlyMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const registerWithEmail = async (name: string, email: string, pass: string) => {
     setIsLoading(true);
     setError(null);
@@ -100,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await sendEmailVerification(cred.user);
       } catch {
-        // Non-fatal if verification email delivery fails on dev/test
+        // Non-fatal if verification email delivery fails in local development
       }
       setFirebaseUser(cred.user);
       await syncBackendUser();
@@ -137,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         error,
         loginWithEmail,
+        loginWithGoogle,
         registerWithEmail,
         logout,
         syncBackendUser,
@@ -176,6 +218,8 @@ function getFirebaseErrorMessage(error: any): string {
       return 'Network error. Please check your internet connection.';
     case 'auth/too-many-requests':
       return 'Too many failed attempts. Please try again later.';
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in window was closed. Please try again.';
     default:
       return error?.message || 'Authentication failed. Please try again.';
   }

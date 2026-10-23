@@ -7,20 +7,25 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
+import { GoogleButton } from '@/components/common/GoogleButton';
 import { LoadingState } from '@/components/common/LoadingState';
+import { Theme } from '@/constants/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { loginWithEmail, firebaseUser, isInitializing, isLoading, error, clearError } = useAuth();
+  const { loginWithEmail, loginWithGoogle, firebaseUser, isInitializing, isLoading, error, clearError } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,7 +34,7 @@ export default function LoginScreen() {
     }
   }, [firebaseUser, router]);
 
-  const handleLogin = async () => {
+  const handleEmailLogin = async () => {
     clearError();
     setValidationError(null);
 
@@ -50,6 +55,22 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    clearError();
+    setValidationError(null);
+    setLoadingGoogle(true);
+    try {
+      const user = await loginWithGoogle();
+      if (user) {
+        router.replace('/(tabs)');
+      }
+    } catch {
+      // Error handled by AuthContext
+    } finally {
+      setLoadingGoogle(false);
+    }
+  };
+
   if (isInitializing) {
     return <LoadingState message="Checking session..." fullscreen />;
   }
@@ -62,30 +83,49 @@ export default function LoginScreen() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Brand Header */}
+        {/* Official Brand Header */}
         <View style={styles.brandContainer}>
-          <View style={styles.logoBadge}>
-            <Ionicons name="airplane" size={32} color="#FFFFFF" />
-          </View>
-          <Text style={styles.appName}>TravelSync</Text>
-          <Text style={styles.tagline}>Group Trip Planning, Seamlessly Synced</Text>
+          <Image
+            source={require('../../../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.brandTitle}>Travel Sync</Text>
         </View>
 
-        {/* Card Form */}
+        {/* Form Container (Carbon Card Surface) */}
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Sign In</Text>
-          <Text style={styles.formSubtitle}>Use your existing TravelSync account credentials</Text>
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>Welcome Back</Text>
+            <Text style={styles.formSubtitle}>Sign in to continue your global adventure.</Text>
+          </View>
 
+          {/* Google Sign-In (Primary Option) */}
+          <GoogleButton
+            onPress={handleGoogleLogin}
+            isLoading={loadingGoogle}
+            style={styles.googleBtn}
+          />
+
+          {/* Divider matching website */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR SIGN IN WITH EMAIL</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Error Banner */}
           {displayError ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+              <Ionicons name="alert-circle" size={18} color={Theme.colors.status.error} />
               <Text style={styles.errorText}>{displayError}</Text>
             </View>
           ) : null}
 
+          {/* Email Input */}
           <Input
             label="Email Address"
-            placeholder="you@example.com"
+            placeholder="e.g. explorer@travelsync.com"
             value={email}
             onChangeText={(text) => {
               setEmail(text);
@@ -94,8 +134,10 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            leftIcon={<Ionicons name="mail-outline" size={18} color={Theme.colors.textMuted} />}
           />
 
+          {/* Password Input */}
           <Input
             label="Password"
             placeholder="Enter your password"
@@ -104,29 +146,42 @@ export default function LoginScreen() {
               setPassword(text);
               if (validationError) setValidationError(null);
             }}
-            secureTextEntry
+            secureTextEntry={!showPassword}
+            leftIcon={<Ionicons name="lock-closed-outline" size={18} color={Theme.colors.textMuted} />}
+            rightIcon={
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={Theme.colors.textMuted}
+                />
+              </TouchableOpacity>
+            }
           />
 
+          {/* Sign In Button (Sage Accent) */}
           <Button
             title="Sign In"
-            onPress={handleLogin}
-            isLoading={isLoading}
-            style={styles.signInButton}
+            onPress={handleEmailLogin}
+            isLoading={isLoading && !loadingGoogle}
+            style={styles.submitBtn}
+            icon={<Ionicons name="arrow-forward" size={18} color={Theme.colors.accentText} />}
           />
 
+          {/* Sign Up Link */}
           <View style={styles.footerRow}>
-            <Text style={styles.footerText}>{"Don't have an account? "}</Text>
+            <Text style={styles.footerText}>Don&apos;t have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
-              <Text style={styles.footerLink}>Create one</Text>
+              <Text style={styles.footerLink}>Create Account</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Sync note */}
+        {/* Security / Architecture Footer */}
         <View style={styles.securityNote}>
-          <Ionicons name="shield-checkmark-outline" size={14} color="#64748B" />
+          <Ionicons name="shield-checkmark-outline" size={14} color={Theme.colors.textMuted} />
           <Text style={styles.securityText}>
-            Secured with Firebase Auth & verified against TravelSync API.
+            Secured by Firebase Auth & verified against TravelSync API.
           </Text>
         </View>
       </ScrollView>
@@ -137,7 +192,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
@@ -145,75 +200,84 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   brandContainer: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  logoBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: '#2563EB',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 4,
+    gap: 12,
+    marginBottom: 28,
   },
-  appName: {
-    fontSize: 28,
+  logo: {
+    width: 44,
+    height: 44,
+  },
+  brandTitle: {
+    fontSize: 24,
     fontWeight: '800',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     letterSpacing: -0.5,
   },
-  tagline: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 4,
-  },
   formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.borderRadius.xl,
     padding: 24,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 2,
+    borderColor: Theme.colors.border,
+  },
+  formHeader: {
+    marginBottom: 20,
   },
   formTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
+    letterSpacing: -0.4,
+    marginBottom: 4,
   },
   formSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 4,
-    marginBottom: 20,
+    fontSize: 14,
+    color: Theme.colors.textSecondary,
+    lineHeight: 20,
+  },
+  googleBtn: {
+    marginBottom: 16,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Theme.colors.border,
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.textMuted,
+    letterSpacing: 0.8,
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: Theme.colors.status.errorBg,
+    borderWidth: 1,
+    borderColor: Theme.colors.status.errorBorder,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: Theme.borderRadius.md,
     marginBottom: 16,
     gap: 8,
   },
   errorText: {
     flex: 1,
-    color: '#DC2626',
+    color: Theme.colors.status.error,
     fontSize: 13,
     fontWeight: '500',
   },
-  signInButton: {
+  submitBtn: {
     marginTop: 8,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   footerRow: {
     flexDirection: 'row',
@@ -221,11 +285,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     fontSize: 14,
   },
   footerLink: {
-    color: '#2563EB',
+    color: Theme.colors.accent,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -238,6 +302,6 @@ const styles = StyleSheet.create({
   },
   securityText: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
   },
 });

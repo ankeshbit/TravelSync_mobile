@@ -7,6 +7,7 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { Theme } from '@/constants/theme';
 
 interface ButtonProps {
   title: string;
@@ -36,7 +37,7 @@ export function Button({
       style={[
         styles.base,
         styles[variant],
-        (!isInteractive) && styles.disabled,
+        !isInteractive && styles.disabled,
         style,
       ]}
       onPress={onPress}
@@ -46,7 +47,7 @@ export function Button({
       {isLoading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'outline' || variant === 'secondary' ? '#2563EB' : '#FFFFFF'}
+          color={variant === 'primary' ? Theme.colors.accentText : Theme.colors.accent}
         />
       ) : (
         <>
@@ -61,7 +62,7 @@ export function Button({
 const styles = StyleSheet.create({
   base: {
     height: 48,
-    borderRadius: 10,
+    borderRadius: Theme.borderRadius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -69,18 +70,22 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primary: {
-    backgroundColor: '#2563EB',
+    backgroundColor: Theme.colors.accent,
   },
   secondary: {
-    backgroundColor: '#EEF2F6',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
   },
   outline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: '#2563EB',
+    borderColor: Theme.colors.borderStrong,
   },
   danger: {
-    backgroundColor: '#EF4444',
+    backgroundColor: Theme.colors.status.errorBg,
+    borderWidth: 1,
+    borderColor: Theme.colors.status.errorBorder,
   },
   disabled: {
     opacity: 0.5,
@@ -88,17 +93,18 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 15,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   primaryText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
   },
   secondaryText: {
-    color: '#1E293B',
+    color: Theme.colors.textPrimary,
   },
   outlineText: {
-    color: '#2563EB',
+    color: Theme.colors.textPrimary,
   },
   dangerText: {
-    color: '#FFFFFF',
+    color: Theme.colors.status.error,
   },
 });

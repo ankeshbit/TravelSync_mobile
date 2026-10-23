@@ -2,20 +2,22 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
+import { Theme } from '@/constants/theme';
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: true,
-        headerStyle: { backgroundColor: '#FFFFFF' },
-        headerTitleStyle: { fontWeight: '700', color: '#0F172A' },
+        headerStyle: { backgroundColor: Theme.colors.surfaceElevated },
+        headerTitleStyle: { fontWeight: '700', color: Theme.colors.textPrimary, fontSize: 18 },
         headerShadowVisible: false,
-        tabBarActiveTintColor: '#2563EB',
-        tabBarInactiveTintColor: '#94A3B8',
+        tabBarActiveTintColor: Theme.colors.accent,
+        tabBarInactiveTintColor: Theme.colors.textMuted,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#E2E8F0',
+          backgroundColor: Theme.colors.surface,
+          borderTopColor: Theme.colors.border,
+          borderTopWidth: 1,
           height: Platform.OS === 'ios' ? 88 : 64,
           paddingBottom: Platform.OS === 'ios' ? 28 : 10,
           paddingTop: 8,
@@ -32,7 +34,7 @@ export default function TabsLayout() {
           title: 'Trips',
           headerTitle: 'TravelSync',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="airplane-outline" size={size} color={color ? String(color) : '#2563EB'} />
+            <Ionicons name="airplane-outline" size={size} color={color ? String(color) : Theme.colors.accent} />
           ),
         }}
       />
@@ -40,9 +42,9 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          headerTitle: 'My Account',
+          headerTitle: 'Account Settings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color ? String(color) : '#94A3B8'} />
+            <Ionicons name="person-outline" size={size} color={color ? String(color) : Theme.colors.textMuted} />
           ),
         }}
       />

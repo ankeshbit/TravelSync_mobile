@@ -18,6 +18,7 @@ import { ErrorState } from '@/components/common/ErrorState';
 import { EmptyState } from '@/components/common/EmptyState';
 import { getErrorMessage } from '@/api/client';
 import { Trip } from '@/types/trip';
+import { Theme } from '@/constants/theme';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -73,7 +74,7 @@ export default function DashboardScreen() {
             onPress={() => router.push('/trip/create')}
             activeOpacity={0.8}
           >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Ionicons name="add" size={18} color={Theme.colors.accentText} />
             <Text style={styles.createButtonText}>New Trip</Text>
           </TouchableOpacity>
         </View>
@@ -84,15 +85,15 @@ export default function DashboardScreen() {
             label="Total Trips"
             value={summary?.totalTrips ?? trips.length}
             icon="airplane"
-            color="#2563EB"
-            bgColor="#EFF6FF"
+            color={Theme.colors.accent}
+            bgColor="rgba(167, 169, 154, 0.12)"
           />
           <StatCard
             label="Upcoming"
             value={summary?.upcomingTrips ?? 0}
             icon="calendar"
-            color="#059669"
-            bgColor="#ECFDF5"
+            color={Theme.colors.status.success}
+            bgColor="rgba(134, 169, 139, 0.12)"
           />
         </View>
         <View style={styles.statsGrid}>
@@ -100,15 +101,15 @@ export default function DashboardScreen() {
             label="Co-Travelers"
             value={summary?.totalMembers ?? 1}
             icon="people"
-            color="#7C3AED"
-            bgColor="#F5F3FF"
+            color={Theme.colors.status.info}
+            bgColor="rgba(152, 166, 160, 0.12)"
           />
           <StatCard
             label="Total Spent"
             value={totalSpentDisplay}
             icon="wallet"
-            color="#D97706"
-            bgColor="#FFFBEB"
+            color={Theme.colors.status.warning}
+            bgColor="rgba(196, 163, 107, 0.12)"
           />
         </View>
 
@@ -159,7 +160,12 @@ export default function DashboardScreen() {
         }
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} colors={['#2563EB']} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={onRefresh}
+            colors={[Theme.colors.accent]}
+            tintColor={Theme.colors.accent}
+          />
         }
       />
     </View>
@@ -169,7 +175,7 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   listContent: {
     padding: 16,
@@ -187,30 +193,30 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 13,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     fontWeight: '500',
   },
   userName: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: Theme.colors.accent,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4,
-    shadowColor: '#2563EB',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2,
   },
   createButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -229,11 +235,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   sectionCount: {
     fontSize: 13,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     fontWeight: '500',
   },
 });

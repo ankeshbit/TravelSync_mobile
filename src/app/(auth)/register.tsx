@@ -7,21 +7,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
+import { GoogleButton } from '@/components/common/GoogleButton';
+import { Theme } from '@/constants/theme';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { registerWithEmail, isLoading, error, clearError } = useAuth();
+  const { registerWithEmail, loginWithGoogle, isLoading, error, clearError } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleRegister = async () => {
@@ -53,6 +58,22 @@ export default function RegisterScreen() {
     }
   };
 
+  const handleGoogleSignup = async () => {
+    clearError();
+    setValidationError(null);
+    setLoadingGoogle(true);
+    try {
+      const user = await loginWithGoogle();
+      if (user) {
+        router.replace('/(tabs)');
+      }
+    } catch {
+      // Error handled by AuthContext
+    } finally {
+      setLoadingGoogle(false);
+    }
+  };
+
   const displayError = validationError || error;
 
   return (
@@ -63,20 +84,44 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Back Button */}
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          <Ionicons name="arrow-back" size={20} color={Theme.colors.textPrimary} />
         </TouchableOpacity>
 
         {/* Brand Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join TravelSync to collaborate and plan trips together</Text>
+        <View style={styles.brandContainer}>
+          <Image
+            source={require('../../../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.brandTitle}>Travel Sync</Text>
         </View>
 
-        {/* Card Form */}
+        {/* Form Card (Charcoal Surface) */}
         <View style={styles.formCard}>
+          <View style={styles.formHeader}>
+            <Text style={styles.formTitle}>Create Account</Text>
+            <Text style={styles.formSubtitle}>Join TravelSync to plan and collaborate seamlessly.</Text>
+          </View>
+
+          {/* Quick Sign Up with Google */}
+          <GoogleButton
+            onPress={handleGoogleSignup}
+            isLoading={loadingGoogle}
+            style={styles.googleBtn}
+          />
+
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR SIGN UP WITH EMAIL</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Error Banner */}
           {displayError ? (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+              <Ionicons name="alert-circle" size={18} color={Theme.colors.status.error} />
               <Text style={styles.errorText}>{displayError}</Text>
             </View>
           ) : null}
@@ -89,6 +134,7 @@ export default function RegisterScreen() {
               setName(text);
               if (validationError) setValidationError(null);
             }}
+            leftIcon={<Ionicons name="person-outline" size={18} color={Theme.colors.textMuted} />}
           />
 
           <Input
@@ -102,6 +148,7 @@ export default function RegisterScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            leftIcon={<Ionicons name="mail-outline" size={18} color={Theme.colors.textMuted} />}
           />
 
           <Input
@@ -112,7 +159,17 @@ export default function RegisterScreen() {
               setPassword(text);
               if (validationError) setValidationError(null);
             }}
-            secureTextEntry
+            secureTextEntry={!showPassword}
+            leftIcon={<Ionicons name="lock-closed-outline" size={18} color={Theme.colors.textMuted} />}
+            rightIcon={
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color={Theme.colors.textMuted}
+                />
+              </TouchableOpacity>
+            }
           />
 
           <Input
@@ -123,14 +180,16 @@ export default function RegisterScreen() {
               setConfirmPassword(text);
               if (validationError) setValidationError(null);
             }}
-            secureTextEntry
+            secureTextEntry={!showPassword}
+            leftIcon={<Ionicons name="shield-outline" size={18} color={Theme.colors.textMuted} />}
           />
 
           <Button
             title="Create Account"
             onPress={handleRegister}
-            isLoading={isLoading}
+            isLoading={isLoading && !loadingGoogle}
             style={styles.registerButton}
+            icon={<Ionicons name="arrow-forward" size={18} color={Theme.colors.accentText} />}
           />
 
           <View style={styles.footerRow}>
@@ -142,9 +201,9 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.verificationNote}>
-          <Ionicons name="mail-outline" size={16} color="#64748B" />
+          <Ionicons name="mail-outline" size={16} color={Theme.colors.textMuted} />
           <Text style={styles.verificationText}>
-            A verification link will be sent to your email to activate all trip features.
+            A verification link will be sent to your email to activate all collaborative trip features.
           </Text>
         </View>
       </ScrollView>
@@ -155,64 +214,106 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
     paddingTop: 48,
+    paddingBottom: 40,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: Theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  header: {
+  brandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
     marginBottom: 24,
   },
-  title: {
-    fontSize: 26,
+  logo: {
+    width: 38,
+    height: 38,
+  },
+  brandTitle: {
+    fontSize: 22,
     fontWeight: '800',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 4,
-  },
   formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: 16,
     padding: 24,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 2,
+    borderColor: Theme.colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  formHeader: {
+    marginBottom: 20,
+  },
+  formTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    letterSpacing: -0.4,
+  },
+  formSubtitle: {
+    fontSize: 13,
+    color: Theme.colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  googleBtn: {
+    marginBottom: 20,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Theme.colors.border,
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.textMuted,
+    letterSpacing: 0.8,
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: 'rgba(199, 127, 120, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(199, 127, 120, 0.3)',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 8,
     marginBottom: 16,
-    gap: 8,
+    gap: 10,
   },
   errorText: {
     flex: 1,
-    color: '#DC2626',
+    color: Theme.colors.status.error,
     fontSize: 13,
     fontWeight: '500',
+    lineHeight: 18,
   },
   registerButton: {
     marginTop: 8,
@@ -224,18 +325,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: '#64748B',
-    fontSize: 14,
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
   },
   footerLink: {
-    color: '#2563EB',
-    fontSize: 14,
+    color: Theme.colors.accent,
+    fontSize: 13,
     fontWeight: '700',
   },
   verificationNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     padding: 14,
     borderRadius: 12,
     marginTop: 20,
@@ -244,7 +347,7 @@ const styles = StyleSheet.create({
   verificationText: {
     flex: 1,
     fontSize: 12,
-    color: '#475569',
+    color: Theme.colors.textMuted,
     lineHeight: 18,
   },
 });

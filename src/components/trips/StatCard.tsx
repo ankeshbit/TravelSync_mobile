@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Theme } from '@/constants/theme';
 
-interface StatCardProps {
+export interface StatCardProps {
   label: string;
   value: string | number;
   icon: keyof typeof Ionicons.glyphMap;
@@ -14,12 +15,12 @@ export function StatCard({
   label,
   value,
   icon,
-  color = '#2563EB',
-  bgColor = '#EFF6FF',
+  color = Theme.colors.accent,
+  bgColor,
 }: StatCardProps) {
   return (
     <View style={styles.card}>
-      <View style={[styles.iconContainer, { backgroundColor: bgColor }]}>
+      <View style={[styles.iconContainer, bgColor ? { backgroundColor: bgColor } : undefined]}>
         <Ionicons name={icon} size={20} color={color} />
       </View>
       <Text style={styles.value} numberOfLines={1}>{value}</Text>
@@ -32,34 +33,35 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     minWidth: 140,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.borderRadius.lg,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: Theme.colors.border,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: Theme.borderRadius.md,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   value: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 2,
+    letterSpacing: -0.3,
   },
   label: {
     fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
+    color: Theme.colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/context/AuthContext';
+import { Theme } from '@/constants/theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,14 +20,14 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <StatusBar style="dark" />
+          <StatusBar style="light" />
           <Stack
             screenOptions={{
-              headerStyle: { backgroundColor: '#FFFFFF' },
-              headerTintColor: '#0F172A',
-              headerTitleStyle: { fontWeight: '700' },
+              headerStyle: { backgroundColor: Theme.colors.surfaceElevated },
+              headerTintColor: Theme.colors.textPrimary,
+              headerTitleStyle: { fontWeight: '700', color: Theme.colors.textPrimary },
               headerShadowVisible: false,
-              contentStyle: { backgroundColor: '#F8FAFC' },
+              contentStyle: { backgroundColor: Theme.colors.background },
             }}
           >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

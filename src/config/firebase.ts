@@ -19,6 +19,7 @@ try {
     });
   } else {
     // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getReactNativePersistence } = require('@firebase/auth/dist/rn/index.js');
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),

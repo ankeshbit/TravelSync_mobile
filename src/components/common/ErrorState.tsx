@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Theme } from '@/constants/theme';
 
 interface ErrorStateProps {
   title?: string;
@@ -18,13 +19,13 @@ export function ErrorState({
   return (
     <View style={[styles.container, fullscreen && styles.fullscreen]}>
       <View style={styles.iconCircle}>
-        <Ionicons name="alert-circle-outline" size={36} color="#DC2626" />
+        <Ionicons name="alert-circle-outline" size={32} color={Theme.colors.status.error} />
       </View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.message}>{message}</Text>
       {onRetry ? (
         <TouchableOpacity style={styles.button} onPress={onRetry} activeOpacity={0.8}>
-          <Ionicons name="refresh" size={16} color="#FFFFFF" style={styles.btnIcon} />
+          <Ionicons name="refresh" size={16} color={Theme.colors.accentText} style={styles.btnIcon} />
           <Text style={styles.buttonText}>Try Again</Text>
         </TouchableOpacity>
       ) : null}
@@ -40,13 +41,15 @@ const styles = StyleSheet.create({
   },
   fullscreen: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FEE2E2',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Theme.colors.status.errorBg,
+    borderWidth: 1,
+    borderColor: Theme.colors.status.errorBorder,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -54,13 +57,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   message: {
     fontSize: 14,
-    color: '#64748B',
+    color: Theme.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 20,
@@ -69,16 +73,16 @@ const styles = StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 20,
+    backgroundColor: Theme.colors.accent,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Theme.borderRadius.md,
   },
   btnIcon: {
     marginRight: 6,
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
     fontWeight: '600',
     fontSize: 14,
   },

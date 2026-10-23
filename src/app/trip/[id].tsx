@@ -21,6 +21,7 @@ import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
 import { Place, Expense } from '@/types/trip';
+import { Theme } from '@/constants/theme';
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -134,7 +135,12 @@ export default function TripDetailsScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} colors={['#2563EB']} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={onRefresh}
+            colors={[Theme.colors.accent]}
+            tintColor={Theme.colors.accent}
+          />
         }
       >
         {/* Cover Photo / Header Banner */}
@@ -148,7 +154,7 @@ export default function TripDetailsScreen() {
 
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <Ionicons name="calendar-outline" size={14} color="#64748B" />
+              <Ionicons name="calendar-outline" size={14} color={Theme.colors.textMuted} />
               <Text style={styles.metaText}>
                 {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
               </Text>
@@ -168,7 +174,7 @@ export default function TripDetailsScreen() {
             <Ionicons
               name="map-outline"
               size={16}
-              color={activeTab === 'itinerary' ? '#2563EB' : '#64748B'}
+              color={activeTab === 'itinerary' ? Theme.colors.accent : Theme.colors.textMuted}
             />
             <Text style={[styles.tabText, activeTab === 'itinerary' && styles.activeTabText]}>
               Itinerary ({(places || []).length})
@@ -182,7 +188,7 @@ export default function TripDetailsScreen() {
             <Ionicons
               name="information-circle-outline"
               size={16}
-              color={activeTab === 'overview' ? '#2563EB' : '#64748B'}
+              color={activeTab === 'overview' ? Theme.colors.accent : Theme.colors.textMuted}
             />
             <Text style={[styles.tabText, activeTab === 'overview' && styles.activeTabText]}>
               Trip Overview
@@ -199,7 +205,7 @@ export default function TripDetailsScreen() {
                 style={styles.addPlaceBtn}
                 onPress={() => setModalVisible(true)}
               >
-                <Ionicons name="add" size={16} color="#FFFFFF" />
+                <Ionicons name="add" size={16} color={Theme.colors.accentText} />
                 <Text style={styles.addPlaceBtnText}>Add Stop</Text>
               </TouchableOpacity>
             </View>
@@ -279,8 +285,8 @@ export default function TripDetailsScreen() {
               {/* Members */}
               {(trip.members || []).map((m) => (
                 <View key={m.id} style={styles.memberRow}>
-                  <View style={[styles.memberAvatar, { backgroundColor: '#7C3AED' }]}>
-                    <Text style={styles.memberAvatarText}>
+                  <View style={[styles.memberAvatar, { backgroundColor: Theme.colors.surfaceElevated, borderWidth: 1, borderColor: Theme.colors.border }]}>
+                    <Text style={[styles.memberAvatarText, { color: Theme.colors.textPrimary }]}>
                       {(m.user?.name || 'M').charAt(0).toUpperCase()}
                     </Text>
                   </View>
@@ -302,7 +308,7 @@ export default function TripDetailsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Itinerary Stop</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#64748B" />
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -372,7 +378,7 @@ export default function TripDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Theme.colors.background,
   },
   content: {
     paddingBottom: 40,
@@ -380,18 +386,18 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: 180,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: Theme.colors.surfaceElevated,
   },
   headerInfo: {
     padding: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: Theme.colors.border,
   },
   destination: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#2563EB',
+    color: Theme.colors.accent,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -399,7 +405,7 @@ const styles = StyleSheet.create({
   tripName: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
     marginBottom: 10,
   },
   metaRow: {
@@ -414,11 +420,13 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     fontWeight: '500',
   },
   statusBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: 'rgba(167, 169, 154, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 169, 154, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -426,14 +434,14 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#2563EB',
+    color: Theme.colors.accent,
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.surface,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: Theme.colors.border,
     gap: 12,
   },
   tabButton: {
@@ -445,15 +453,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   activeTabButton: {
-    borderBottomColor: '#2563EB',
+    borderBottomColor: Theme.colors.accent,
   },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: Theme.colors.textMuted,
   },
   activeTabText: {
-    color: '#2563EB',
+    color: Theme.colors.accent,
   },
   tabContent: {
     padding: 16,
@@ -467,19 +475,19 @@ const styles = StyleSheet.create({
   sectionHeading: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   addPlaceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: Theme.colors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     gap: 4,
   },
   addPlaceBtnText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
     fontWeight: '600',
     fontSize: 12,
   },
@@ -493,19 +501,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   dayBadge: {
-    backgroundColor: '#0F172A',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
   dayBadgeText: {
-    color: '#FFFFFF',
+    color: Theme.colors.textPrimary,
     fontSize: 12,
     fontWeight: '700',
   },
   dayCount: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
   },
   overviewCard: {
     marginTop: 8,
@@ -513,36 +523,36 @@ const styles = StyleSheet.create({
   detailRow: {
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: Theme.colors.border,
   },
   detailLabel: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
     marginBottom: 2,
   },
   detailValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: Theme.colors.border,
   },
   memberAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#2563EB',
+    backgroundColor: Theme.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   memberAvatarText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
     fontWeight: '700',
     fontSize: 14,
   },
@@ -552,32 +562,36 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   memberEmail: {
     fontSize: 12,
-    color: '#64748B',
+    color: Theme.colors.textMuted,
   },
   ownerBadge: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: 'rgba(167, 169, 154, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 169, 154, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
   },
   ownerBadgeText: {
     fontSize: 11,
-    color: '#2563EB',
+    color: Theme.colors.accent,
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
     padding: 20,
     maxHeight: '85%',
   },
@@ -590,7 +604,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: Theme.colors.textPrimary,
   },
   formRow: {
     flexDirection: 'row',
