@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { GoogleButton } from '@/components/common/GoogleButton';
+import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 
 export default function RegisterScreen() {
@@ -88,14 +88,10 @@ export default function RegisterScreen() {
         </TouchableOpacity>
 
         {/* Brand Header */}
-        <View style={styles.brandContainer}>
-          <Image
-            source={require('../../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.brandTitle}>Travel Sync</Text>
-        </View>
+        <BrandLogo
+          size="xl"
+          containerStyle={styles.brandContainer}
+        />
 
         {/* Form Card (Charcoal Surface) */}
         <View style={styles.formCard}>

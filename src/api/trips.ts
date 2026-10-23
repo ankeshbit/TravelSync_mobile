@@ -129,6 +129,33 @@ export async function updatePlaceNote(tripId: string, placeId: string, note: str
 }
 
 /**
+ * Reorder itinerary places within/across days.
+ */
+export async function reorderTripPlaces(
+  tripId: string,
+  updates: { placeId: string; dayNumber: number; orderIndex: number }[]
+): Promise<Place[]> {
+  const response = await api.patch<Place[]>(`/trips/${tripId}/places/reorder`, updates);
+  return response.data;
+}
+
+/**
+ * Fetch full offline pack for a trip (metadata, itinerary, expenses, checklist, notes).
+ */
+export async function getOfflineTripPack(tripId: string): Promise<any> {
+  const response = await api.get(`/trips/${tripId}/offline-pack`);
+  return response.data;
+}
+
+/**
+ * Sync offline batch changes to backend.
+ */
+export async function syncOfflineChanges(tripId: string, changes: any[]): Promise<any> {
+  const response = await api.post(`/trips/${tripId}/offline-sync`, { changes });
+  return response.data;
+}
+
+/**
  * Fetch expenses for a trip.
  */
 export async function getTripExpenses(tripId: string): Promise<Expense[]> {

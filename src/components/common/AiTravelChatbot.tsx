@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { chatWithAiGuide } from '@/api/trips';
+import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 import { ExploreDestination } from '@/types/trip';
 
@@ -137,13 +138,11 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
-              <View style={styles.iconBadge}>
-                <Ionicons name="sparkles" size={18} color={Theme.colors.accent} />
-              </View>
-              <View>
-                <Text style={styles.title}>TravelSync AI Guide</Text>
-                <Text style={styles.subtitle}>Grounded Destination Recommendations</Text>
-              </View>
+              <BrandLogo
+                size="md"
+                title="TravelSync AI Guide"
+                subtitle="Grounded Destination Recommendations"
+              />
             </View>
 
             <View style={styles.headerActions}>
@@ -181,7 +180,7 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
               >
                 {msg.sender === 'bot' && (
                   <View style={styles.botAvatar}>
-                    <Ionicons name="compass" size={14} color={Theme.colors.accent} />
+                    <BrandLogo size={16} showText={false} />
                   </View>
                 )}
 

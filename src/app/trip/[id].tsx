@@ -34,8 +34,11 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
+import { BrandLogo } from '@/components/common/BrandLogo';
 import { Place, Expense, AiSuggestion } from '@/types/trip';
 import { Theme } from '@/constants/theme';
+import { useTripSocket } from '@/hooks/useTripSocket';
+import { TripPresence } from '@/components/trips/TripPresence';
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -89,6 +92,18 @@ export default function TripDetailsScreen() {
     data: members,
     refetch: refetchMembers,
   } = useTripMembers(id || '');
+
+  // Real-time Socket.IO collaboration
+  const { activeMembers: socketMembers } = useTripSocket(id || '', {
+    onPlaceAdded: () => refetchPlaces(),
+    onPlaceDeleted: () => refetchPlaces(),
+    onPlaceReordered: () => refetchPlaces(),
+    onPlaceNoteUpdated: () => refetchPlaces(),
+    onExpenseAdded: () => refetchExpenses(),
+    onExpenseDeleted: () => refetchExpenses(),
+    onMemberJoined: () => refetchMembers(),
+    onTripUpdated: () => refetchTrip(),
+  });
 
   const addPlaceMutation = useAddTripPlace(id || '');
   const deletePlaceMutation = useDeleteTripPlace(id || '');
@@ -302,8 +317,9 @@ export default function TripDetailsScreen() {
           )}
           <View style={styles.heroOverlay} />
 
-          {/* Quick Header Action Icons */}
+          {/* Quick Header Action Icons & Live Presence */}
           <View style={styles.headerFloatingActions}>
+            <TripPresence activeMembers={socketMembers} />
             <TouchableOpacity
               style={styles.floatingActionBtn}
               onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
@@ -334,13 +350,41 @@ export default function TripDetailsScreen() {
         <View style={styles.quickActionsBar}>
           <TouchableOpacity
             style={styles.quickActionCard}
-            onPress={() => router.push({ pathname: '/trip/expenses', params: { tripId: id } })}
+            onPress={() => router.push({ pathname: '/trip/map', params: { tripId: id } })}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(167, 169, 154, 0.15)' }]}>
-              <Ionicons name="wallet-outline" size={20} color={Theme.colors.accent} />
+              <Ionicons name="map-outline" size={20} color={Theme.colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>Expenses</Text>
+              <Text style={styles.quickActionTitle}>Map & Planner</Text>
+              <Text style={styles.quickActionSub}>Day-by-day routes</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={() => router.push({ pathname: '/trip/offline', params: { tripId: id } })}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(217, 119, 6, 0.15)' }]}>
+              <Ionicons name="cloud-offline-outline" size={20} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.quickActionTitle}>Offline Companion</Text>
+              <Text style={styles.quickActionSub}>Airplane mode ready</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={() => router.push({ pathname: '/trip/expenses', params: { tripId: id } })}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(134, 169, 139, 0.15)' }]}>
+              <Ionicons name="wallet-outline" size={20} color={Theme.colors.status.success} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.quickActionTitle}>Expenses & Debts</Text>
               <Text style={styles.quickActionSub}>
                 {trip.currency} {totalExpenseSum.toLocaleString()} spent
               </Text>
@@ -352,12 +396,12 @@ export default function TripDetailsScreen() {
             style={styles.quickActionCard}
             onPress={handleLoadAiSuggestions}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(134, 169, 139, 0.15)' }]}>
-              <Ionicons name="sparkles" size={20} color={Theme.colors.status.success} />
+            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(167, 169, 154, 0.15)' }]}>
+              <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.quickActionTitle}>AI Travel Guide</Text>
-              <Text style={styles.quickActionSub}>Itinerary suggestions</Text>
+              <Text style={styles.quickActionSub}>Smart suggestions</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
           </TouchableOpacity>
@@ -428,13 +472,22 @@ export default function TripDetailsScreen() {
           <View style={styles.tabContent}>
             <View style={styles.sectionTitleRow}>
               <Text style={styles.sectionHeading}>Daily Schedule</Text>
-              <TouchableOpacity
-                style={styles.addPlaceBtn}
-                onPress={() => setModalVisible(true)}
-              >
-                <Ionicons name="add" size={16} color={Theme.colors.accentText} />
-                <Text style={styles.addPlaceBtnText}>Add Stop</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.addPlaceBtn, { backgroundColor: Theme.colors.surfaceElevated, borderWidth: 1, borderColor: Theme.colors.border }]}
+                  onPress={() => router.push({ pathname: '/trip/map', params: { tripId: id } })}
+                >
+                  <Ionicons name="map-outline" size={15} color={Theme.colors.accent} />
+                  <Text style={[styles.addPlaceBtnText, { color: Theme.colors.accent }]}>Map</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addPlaceBtn}
+                  onPress={() => setModalVisible(true)}
+                >
+                  <Ionicons name="add" size={16} color={Theme.colors.accentText} />
+                  <Text style={styles.addPlaceBtnText}>Add Stop</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {placesLoading ? (
@@ -760,9 +813,12 @@ export default function TripDetailsScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={{ color: Theme.colors.textSecondary, fontSize: 12, marginBottom: 14 }}>
-              Tailored recommendations for {trip.destination} powered by TravelSync AI.
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+              <Text style={{ color: Theme.colors.textSecondary, fontSize: 12 }}>
+                Tailored recommendations for {trip.destination} powered by
+              </Text>
+              <BrandLogo size="xs" title="TravelSync AI" />
+            </View>
 
             {loadingAi ? (
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>

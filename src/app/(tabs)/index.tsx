@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   StyleSheet,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,10 +22,14 @@ import { Trip } from '@/types/trip';
 import { Theme } from '@/constants/theme';
 import { AiTravelChatbot } from '@/components/common/AiTravelChatbot';
 
+type FilterType = 'All' | 'Upcoming' | 'Past';
+
 export default function DashboardScreen() {
   const router = useRouter();
   const { user, firebaseUser, isInitializing } = useAuth();
-  const [aiChatVisible, setAiChatVisible] = React.useState(false);
+  const [aiChatVisible, setAiChatVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<FilterType>('Upcoming');
 
   const {
     data: tripsData,
@@ -40,10 +45,12 @@ export default function DashboardScreen() {
     refetch: refetchSummary,
   } = useTripSummary();
 
-  // Redirect to login if unauthenticated
+  // Redirect to login if unauthenticated or email unverified
   useEffect(() => {
     if (!isInitializing && !firebaseUser) {
       router.replace('/(auth)/login');
+    } else if (!isInitializing && firebaseUser && !firebaseUser.emailVerified) {
+      router.replace('/(auth)/verify-email');
     }
   }, [firebaseUser, isInitializing, router]);
 
@@ -51,18 +58,56 @@ export default function DashboardScreen() {
     await Promise.all([refetchTrips(), refetchSummary()]);
   };
 
+  const rawTrips = tripsData?.trips;
+  const trips = useMemo(() => rawTrips || [], [rawTrips]);
+  const displayName = user?.name || firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Traveler';
+
+  // Filtered trips list matching website DashboardView.vue
+  const displayTrips = useMemo(() => {
+    let list = Array.isArray(trips) ? trips : [];
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (t) =>
+          (t.name && t.name.toLowerCase().includes(q)) ||
+          (t.destination && t.destination.toLowerCase().includes(q))
+      );
+    }
+
+    if (activeFilter === 'Upcoming') {
+      return list.filter((t) => t.status !== 'completed' && t.status !== 'cancelled');
+    } else if (activeFilter === 'Past') {
+      return list.filter((t) => t.status === 'completed' || t.status === 'cancelled');
+    }
+
+    return list;
+  }, [trips, searchQuery, activeFilter]);
+
+  // Total spent multi-currency formatter matching website formatCurrency
+  const formattedTotalSpent = useMemo(() => {
+    if (summary?.spentByCurrency && typeof summary.spentByCurrency === 'object') {
+      const entries = Object.entries(summary.spentByCurrency).filter(
+        ([, amt]) => typeof amt === 'number' && (amt as number) > 0
+      );
+      if (entries.length > 1) {
+        return entries.map(([curr, amt]) => `${curr} ${Number(amt).toLocaleString()}`).join(' + ');
+      }
+      if (entries.length === 1) {
+        const [curr, amt] = entries[0];
+        return `${curr} ${Number(amt).toLocaleString()}`;
+      }
+    }
+    const curr = summary?.currency || 'INR';
+    const total = summary?.totalSpent ?? 0;
+    return `${curr} ${Number(total).toLocaleString()}`;
+  }, [summary]);
+
   if (isInitializing) {
     return <LoadingState message="Checking TravelSync session..." fullscreen />;
   }
 
-  const trips = tripsData?.trips || [];
-  const displayName = user?.name || firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Traveler';
-
   const renderHeader = () => {
-    const totalSpentDisplay = summary?.totalSpent !== null && summary?.totalSpent !== undefined
-      ? `${summary?.currency || 'INR'} ${summary.totalSpent.toLocaleString()}`
-      : (summary?.hasMultipleCurrencies ? 'Multi-Curr' : '0');
-
     return (
       <View style={styles.headerContainer}>
         {/* User Greeting & CTA */}
@@ -108,17 +153,55 @@ export default function DashboardScreen() {
           />
           <StatCard
             label="Total Spent"
-            value={totalSpentDisplay}
+            value={formattedTotalSpent}
             icon="wallet"
             color={Theme.colors.status.warning}
             bgColor="rgba(196, 163, 107, 0.12)"
           />
         </View>
 
-        {/* Trips Section Title */}
+        {/* Search Bar matching website */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={18} color={Theme.colors.textMuted} />
+          <TextInput
+            placeholder="Search trips by name or destination..."
+            placeholderTextColor={Theme.colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={styles.searchInput}
+            autoCapitalize="none"
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color={Theme.colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Filter Pills matching website DashboardView */}
+        <View style={styles.filterPillsRow}>
+          {(['All', 'Upcoming', 'Past'] as FilterType[]).map((tab) => {
+            const isActive = activeFilter === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.filterPill, isActive && styles.filterPillActive]}
+                onPress={() => setActiveFilter(tab)}
+              >
+                <Text style={[styles.filterPillText, isActive && styles.filterPillTextActive]}>
+                  {tab === 'All' ? 'All Trips' : tab}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Section Header */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your Trips</Text>
-          <Text style={styles.sectionCount}>{trips.length} total</Text>
+          <Text style={styles.sectionTitle}>
+            {activeFilter === 'All' ? 'All Trips' : `${activeFilter} Trips`}
+          </Text>
+          <Text style={styles.sectionCount}>{displayTrips.length} found</Text>
         </View>
       </View>
     );
@@ -142,7 +225,7 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={trips}
+        data={displayTrips}
         keyExtractor={(item: Trip) => item.id}
         renderItem={({ item }: { item: Trip }) => (
           <TripCard
@@ -152,13 +235,31 @@ export default function DashboardScreen() {
         )}
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={
-          <EmptyState
-            icon="airplane-outline"
-            title="No Trips Found"
-            message="You haven't created or joined any trips yet. Start planning your next adventure!"
-            actionLabel="Plan a Trip"
-            onAction={() => router.push('/trip/create')}
-          />
+          searchQuery ? (
+            <EmptyState
+              icon="search-outline"
+              title="No Matching Trips Found"
+              message={`No trips match "${searchQuery}". Check your keywords or try searching for another destination.`}
+              actionLabel="Clear Search"
+              onAction={() => setSearchQuery('')}
+            />
+          ) : activeFilter !== 'All' ? (
+            <EmptyState
+              icon="calendar-outline"
+              title={`No ${activeFilter.toLowerCase()} trips`}
+              message={`You don't have any ${activeFilter.toLowerCase()} trips scheduled right now.`}
+              actionLabel="Plan a Trip"
+              onAction={() => router.push('/trip/create')}
+            />
+          ) : (
+            <EmptyState
+              icon="airplane-outline"
+              title="No Trips Yet"
+              message="You haven't planned any trips yet. Create your first adventure and start inviting your travel companions!"
+              actionLabel="Plan a Trip"
+              onAction={() => router.push('/trip/create')}
+            />
+          )
         }
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -197,7 +298,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   headerContainer: {
     marginBottom: 8,
@@ -243,11 +344,53 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 8,
+    marginBottom: 14,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Theme.colors.textPrimary,
+  },
+  filterPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  filterPillActive: {
+    backgroundColor: Theme.colors.accent,
+    borderColor: Theme.colors.accent,
+  },
+  filterPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.colors.textSecondary,
+  },
+  filterPillTextActive: {
+    color: Theme.colors.accentText,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
     marginBottom: 12,
   },
   sectionTitle: {

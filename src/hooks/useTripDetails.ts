@@ -5,6 +5,7 @@ import {
   addTripPlace,
   deleteTripPlace,
   updatePlaceNote,
+  reorderTripPlaces,
   getTripExpenses,
   addTripExpense,
   deleteTripExpense,
@@ -119,6 +120,18 @@ export function useUpdatePlaceNote(tripId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+    },
+  });
+}
+
+export function useReorderTripPlaces(tripId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (updates: { placeId: string; dayNumber: number; orderIndex: number }[]) =>
+      reorderTripPlaces(tripId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
     },
   });
 }

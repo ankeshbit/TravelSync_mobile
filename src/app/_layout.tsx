@@ -47,6 +47,20 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="trip/map"
+              options={{
+                title: 'Map & Itinerary',
+                headerBackTitle: 'Trip',
+              }}
+            />
+            <Stack.Screen
+              name="trip/offline"
+              options={{
+                title: 'Offline Companion',
+                headerBackTitle: 'Trip',
+              }}
+            />
+            <Stack.Screen
               name="trip/edit"
               options={{
                 title: 'Edit Trip',

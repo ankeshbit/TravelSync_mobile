@@ -24,6 +24,10 @@ export const getApiBaseUrl = (): string => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+export const getSocketBaseUrl = (): string => {
+  return getApiBaseUrl().replace(/\/api\/?$/, '');
+};
+
 export const FIREBASE_CONFIG = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyALzehITyb7-KJC7shQf_1kPPC1uaLuT-c',
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'travelsync-2509e.firebaseapp.com',

@@ -20,6 +20,8 @@ import {
   useTripMembers,
 } from '@/hooks/useTripDetails';
 import { useAuth } from '@/context/AuthContext';
+import { useTripSocket } from '@/hooks/useTripSocket';
+import { TripPresence } from '@/components/trips/TripPresence';
 import { LoadingState } from '@/components/common/LoadingState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -53,11 +55,25 @@ export default function TripExpensesScreen() {
   const { data: balances, refetch: refetchBalances } = useTripBalances(tripId);
   const { data: members = [] } = useTripMembers(tripId);
 
+  // Real-time socket presence & updates
+  const { activeMembers } = useTripSocket(tripId, {
+    onExpenseAdded: () => {
+      refetchExpenses();
+      refetchBalances();
+    },
+    onExpenseDeleted: () => {
+      refetchExpenses();
+      refetchBalances();
+    },
+  });
+
   const addExpenseMutation = useAddTripExpense(tripId);
   const deleteExpenseMutation = useDeleteTripExpense(tripId);
 
-  // Modal State
+  // Modals & Currency State
   const [modalVisible, setModalVisible] = useState(false);
+  const [settleModalVisible, setSettleModalVisible] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState<string>('');
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('food');
@@ -68,6 +84,73 @@ export default function TripExpensesScreen() {
     ...(trip?.owner ? [{ id: trip.owner.id, name: trip.owner.name, email: trip.owner.email, isOwner: true }] : []),
     ...members.map((m) => ({ id: m.userId, name: m.user?.name || 'Member', email: m.user?.email || '', isOwner: false })),
   ];
+
+  // Available Currencies
+  const availableCurrencies: string[] = (() => {
+    const set = new Set<string>();
+    if (trip?.currency) set.add(trip.currency.toUpperCase());
+    if (balances?.currency) set.add(balances.currency.toUpperCase());
+    if (balances?.byCurrency) {
+      Object.keys(balances.byCurrency).forEach((c) => set.add(c.toUpperCase()));
+    }
+    expenses.forEach((e) => {
+      if (e.currency) set.add(e.currency.toUpperCase());
+    });
+    if (set.size === 0) set.add('USD');
+    return Array.from(set);
+  })();
+
+  const activeCurrency = selectedCurrency || availableCurrencies[0] || trip?.currency || 'USD';
+
+  // Current Currency Data
+  const currentCurrencyData = balances?.byCurrency?.[activeCurrency] || balances?.byCurrency?.[activeCurrency.toLowerCase()] || null;
+
+  // Filtered Expenses
+  const currentCurrencyExpenses = expenses.filter(
+    (e) => (e.currency || trip?.currency || 'USD').toUpperCase() === activeCurrency.toUpperCase()
+  );
+
+  // Financial Stats
+  const computedTotalExpenses = (() => {
+    if (currentCurrencyData && currentCurrencyData.totalExpenses !== undefined) {
+      return currentCurrencyData.totalExpenses;
+    }
+    return currentCurrencyExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  })();
+
+  const computedYourShare = (() => {
+    if (!user?.id || !currentCurrencyExpenses.length) return 0;
+    return currentCurrencyExpenses.reduce((sum, item) => {
+      const splits = item.splits && item.splits.length > 0 ? item.splits : [];
+      if (splits.length === 0) return sum;
+      const isIncluded = splits.some((s) => (s.userId || s.user?.id) === user.id);
+      if (isIncluded) {
+        return sum + (Number(item.amount) || 0) / splits.length;
+      }
+      return sum;
+    }, 0);
+  })();
+
+  // Settlements
+  const settlements: any[] = (() => {
+    if (currentCurrencyData?.settlements) return currentCurrencyData.settlements;
+    if (balances?.settlements) return balances.settlements;
+    return [];
+  })();
+
+  const computedYouOwe = (() => {
+    if (!user?.id || !settlements.length) return 0;
+    return settlements
+      .filter((s) => s.from === user.id)
+      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  })();
+
+  const computedYouAreOwed = (() => {
+    if (!user?.id || !settlements.length) return 0;
+    return settlements
+      .filter((s) => s.to === user.id)
+      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  })();
 
   const onRefresh = async () => {
     await Promise.all([refetchExpenses(), refetchBalances()]);
@@ -113,7 +196,7 @@ export default function TripExpensesScreen() {
       await addExpenseMutation.mutateAsync({
         title: title.trim(),
         amount: numAmount,
-        currency: trip?.currency || 'INR',
+        currency: activeCurrency,
         category,
         paidById,
         splitUserIds: selectedSplits,
@@ -144,13 +227,9 @@ export default function TripExpensesScreen() {
     return <ErrorState title="Trip Not Found" message="Could not load expenses for this trip." onRetry={onRefresh} fullscreen />;
   }
 
-  const totalSpent = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const budgetTotal = (trip.budgetPerPerson || 0) * (allMembers.length || 1);
-  const budgetPercent = budgetTotal > 0 ? Math.min(100, Math.round((totalSpent / budgetTotal) * 100)) : 0;
-
   // Category breakdown
   const categoryTotals: Record<string, number> = {};
-  expenses.forEach((e) => {
+  currentCurrencyExpenses.forEach((e) => {
     const cat = (e.category || 'other').toLowerCase();
     categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(e.amount);
   });
@@ -168,47 +247,111 @@ export default function TripExpensesScreen() {
           />
         }
       >
-        {/* Header Budget Card */}
-        <Card style={styles.budgetCard}>
-          <Text style={styles.budgetLabel}>TOTAL EXPENSES</Text>
-          <Text style={styles.budgetSpent}>
-            {trip.currency} {totalSpent.toLocaleString()}
-          </Text>
+        {/* Header Actions & Presence */}
+        <View style={styles.headerBar}>
+          <TripPresence activeMembers={activeMembers} />
+          <View style={styles.headerActions}>
+            {settlements.length > 0 && (
+              <TouchableOpacity
+                style={styles.settleUpHeaderBtn}
+                onPress={() => setSettleModalVisible(true)}
+              >
+                <Ionicons name="swap-horizontal" size={16} color={Theme.colors.accent} />
+                <Text style={styles.settleUpHeaderBtnText}>Settle Up</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.addHeaderBtn} onPress={handleOpenAddModal}>
+              <Ionicons name="add" size={18} color={Theme.colors.accentText} />
+              <Text style={styles.addHeaderBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-          {budgetTotal > 0 && (
-            <View style={styles.budgetProgressSection}>
-              <View style={styles.budgetProgressRow}>
-                <Text style={styles.budgetTotalText}>
-                  Budget: {trip.currency} {budgetTotal.toLocaleString()} ({budgetPercent}%)
-                </Text>
-                <Text style={styles.budgetRemainingText}>
-                  Remaining: {trip.currency} {Math.max(0, budgetTotal - totalSpent).toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.progressBarBg}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${budgetPercent}%`,
-                      backgroundColor:
-                        budgetPercent > 90
-                          ? Theme.colors.status.error
-                          : budgetPercent > 70
-                          ? Theme.colors.status.warning
-                          : Theme.colors.accent,
-                    },
-                  ]}
-                />
-              </View>
+        {/* Currency Tabs */}
+        {availableCurrencies.length > 1 && (
+          <View style={styles.currencyRow}>
+            <Text style={styles.currencyLabel}>Currency:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.currencyTabs}>
+              {availableCurrencies.map((curr) => {
+                const isSelected = curr === activeCurrency;
+                return (
+                  <TouchableOpacity
+                    key={curr}
+                    style={[styles.currencyTab, isSelected && styles.currencyTabActive]}
+                    onPress={() => setSelectedCurrency(curr)}
+                  >
+                    <Text style={[styles.currencyTabText, isSelected && styles.currencyTabTextActive]}>
+                      {curr}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* 4 Stat Cards Row */}
+        <View style={styles.statsGrid}>
+          {/* Total Expenses */}
+          <Card style={styles.statCard}>
+            <View style={styles.statIconContainer}>
+              <Ionicons name="receipt-outline" size={20} color={Theme.colors.textMuted} />
             </View>
-          )}
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>Total Expenses</Text>
+              <Text style={styles.statValue}>
+                {activeCurrency} {computedTotalExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          </Card>
 
-          <TouchableOpacity style={styles.addExpenseBtn} onPress={handleOpenAddModal}>
-            <Ionicons name="add" size={18} color={Theme.colors.accentText} />
-            <Text style={styles.addExpenseBtnText}>Add Expense</Text>
-          </TouchableOpacity>
-        </Card>
+          {/* Your Share */}
+          <Card style={styles.statCard}>
+            <View style={styles.statIconContainer}>
+              <Ionicons name="pie-chart-outline" size={20} color={Theme.colors.textMuted} />
+            </View>
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>Your Share</Text>
+              <Text style={styles.statValue}>
+                {activeCurrency} {computedYourShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          </Card>
+
+          {/* You Owe */}
+          <Card style={[styles.statCard, computedYouOwe > 0 && styles.statCardOwe]}>
+            <View style={[styles.statIconContainer, computedYouOwe > 0 && styles.statIconContainerOwe]}>
+              <Ionicons
+                name="arrow-down"
+                size={20}
+                color={computedYouOwe > 0 ? Theme.colors.status.error : Theme.colors.textMuted}
+              />
+            </View>
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>You Owe</Text>
+              <Text style={[styles.statValue, computedYouOwe > 0 && styles.statValueOwe]}>
+                {activeCurrency} {computedYouOwe.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          </Card>
+
+          {/* You Are Owed */}
+          <Card style={[styles.statCard, computedYouAreOwed > 0 && styles.statCardOwed]}>
+            <View style={[styles.statIconContainer, computedYouAreOwed > 0 && styles.statIconContainerOwed]}>
+              <Ionicons
+                name="arrow-up"
+                size={20}
+                color={computedYouAreOwed > 0 ? Theme.colors.status.success : Theme.colors.textMuted}
+              />
+            </View>
+            <View style={styles.statContent}>
+              <Text style={styles.statLabel}>You Are Owed</Text>
+              <Text style={[styles.statValue, computedYouAreOwed > 0 && styles.statValueOwed]}>
+                {activeCurrency} {computedYouAreOwed.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          </Card>
+        </View>
 
         {/* Category Breakdown */}
         {Object.keys(categoryTotals).length > 0 && (
@@ -216,14 +359,14 @@ export default function TripExpensesScreen() {
             <Text style={styles.sectionHeading}>Category Breakdown</Text>
             <View style={styles.categoryGrid}>
               {EXPENSE_CATEGORIES.map((cat) => {
-                const amount = categoryTotals[cat.id] || 0;
-                if (amount === 0) return null;
+                const catAmount = categoryTotals[cat.id] || 0;
+                if (catAmount === 0) return null;
                 return (
                   <View key={cat.id} style={styles.categoryChip}>
                     <Ionicons name={cat.icon as any} size={16} color={Theme.colors.accent} />
                     <Text style={styles.categoryName}>{cat.label}</Text>
                     <Text style={styles.categoryAmount}>
-                      {trip.currency} {amount.toLocaleString()}
+                      {activeCurrency} {catAmount.toLocaleString()}
                     </Text>
                   </View>
                 );
@@ -233,30 +376,35 @@ export default function TripExpensesScreen() {
         )}
 
         {/* Debt Settlement Matrix ("Who Owes Whom") */}
-        {balances?.settlements && balances.settlements.length > 0 && (
+        {settlements.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Debt Settlement (&quot;Who Owes Whom&quot;)</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeading}>Debt Settlement (&quot;Who Owes Whom&quot;)</Text>
+              <TouchableOpacity onPress={() => setSettleModalVisible(true)}>
+                <Text style={styles.sectionLink}>View Plan</Text>
+              </TouchableOpacity>
+            </View>
             <Card style={styles.settlementsCard}>
-              {balances.settlements.map((s, idx) => (
+              {settlements.map((s, idx) => (
                 <View key={idx} style={styles.settlementRow}>
                   <View style={styles.settlementAvatars}>
                     <View style={styles.miniAvatar}>
-                      <Text style={styles.miniAvatarText}>{s.fromName.charAt(0).toUpperCase()}</Text>
+                      <Text style={styles.miniAvatarText}>{(s.fromName || 'U').charAt(0).toUpperCase()}</Text>
                     </View>
                     <Ionicons name="arrow-forward" size={14} color={Theme.colors.accent} />
                     <View style={[styles.miniAvatar, { backgroundColor: Theme.colors.surfaceElevated }]}>
-                      <Text style={styles.miniAvatarText}>{s.toName.charAt(0).toUpperCase()}</Text>
+                      <Text style={styles.miniAvatarText}>{(s.toName || 'U').charAt(0).toUpperCase()}</Text>
                     </View>
                   </View>
 
                   <View style={styles.settlementTextContainer}>
                     <Text style={styles.settlementDescription}>
-                      <Text style={styles.boldName}>{s.fromName}</Text> owes <Text style={styles.boldName}>{s.toName}</Text>
+                      <Text style={styles.boldName}>{s.fromName || 'Someone'}</Text> owes <Text style={styles.boldName}>{s.toName || 'Someone'}</Text>
                     </Text>
                   </View>
 
                   <Text style={styles.settlementAmount}>
-                    {s.currency} {s.amount.toFixed(2)}
+                    {activeCurrency} {Number(s.amount).toFixed(2)}
                   </Text>
                 </View>
               ))}
@@ -266,9 +414,9 @@ export default function TripExpensesScreen() {
 
         {/* Expenses List */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>All Transactions ({expenses.length})</Text>
+          <Text style={styles.sectionHeading}>All Transactions ({currentCurrencyExpenses.length})</Text>
 
-          {expenses.length === 0 ? (
+          {currentCurrencyExpenses.length === 0 ? (
             <EmptyState
               icon="wallet-outline"
               title="No Expenses Logged"
@@ -277,7 +425,7 @@ export default function TripExpensesScreen() {
               onAction={handleOpenAddModal}
             />
           ) : (
-            expenses.map((exp) => (
+            currentCurrencyExpenses.map((exp) => (
               <Card key={exp.id} style={styles.expenseCard}>
                 <View style={styles.expenseMain}>
                   <View style={styles.expenseCategoryIcon}>
@@ -300,7 +448,7 @@ export default function TripExpensesScreen() {
 
                   <View style={styles.expenseRight}>
                     <Text style={styles.expenseValue}>
-                      {exp.currency} {Number(exp.amount).toLocaleString()}
+                      {exp.currency || activeCurrency} {Number(exp.amount).toLocaleString()}
                     </Text>
                     <TouchableOpacity
                       onPress={() => handleDeleteExpense(exp)}
@@ -425,6 +573,78 @@ export default function TripExpensesScreen() {
                 style={{ marginTop: 20 }}
               />
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Settle Up Modal */}
+      <Modal visible={settleModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Settlement Plan</Text>
+                <Text style={styles.modalSubtitle}>Optimized debts for {activeCurrency}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSettleModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              {settlements.length === 0 ? (
+                <View style={styles.emptySettlementBox}>
+                  <Ionicons name="checkmark-circle-outline" size={36} color={Theme.colors.status.success} />
+                  <Text style={styles.emptySettlementText}>All settled up! No outstanding balances.</Text>
+                </View>
+              ) : (
+                settlements.map((s, idx) => {
+                  const isUserSender = user?.id && s.from === user.id;
+                  const isUserReceiver = user?.id && s.to === user.id;
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.settleModalRow,
+                        isUserSender && styles.settleModalRowUserSender,
+                        isUserReceiver && styles.settleModalRowUserReceiver,
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settleRowTitle}>
+                          {isUserSender ? 'You' : s.fromName || 'Someone'}
+                          {' → '}
+                          {isUserReceiver ? 'You' : s.toName || 'Someone'}
+                        </Text>
+                        <Text style={styles.settleRowSubtitle}>
+                          {isUserSender
+                            ? 'You owe this amount'
+                            : isUserReceiver
+                            ? 'You receive this amount'
+                            : 'Peer settlement'}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.settleRowAmount,
+                          isUserSender && { color: Theme.colors.status.error },
+                          isUserReceiver && { color: Theme.colors.status.success },
+                        ]}
+                      >
+                        {activeCurrency} {Number(s.amount).toFixed(2)}
+                      </Text>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <Button
+              title="Close"
+              variant="outline"
+              onPress={() => setSettleModalVisible(false)}
+              style={{ marginTop: 16 }}
+            />
           </View>
         </View>
       </Modal>
@@ -715,5 +935,198 @@ const styles = StyleSheet.create({
   splitUserName: {
     fontSize: 13,
     color: Theme.colors.textPrimary,
+  },
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settleUpHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  settleUpHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
+  },
+  addHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  addHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Theme.colors.accentText,
+  },
+  currencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  currencyLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.colors.textMuted,
+  },
+  currencyTabs: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  currencyTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  currencyTabActive: {
+    backgroundColor: Theme.colors.accent,
+    borderColor: Theme.colors.accent,
+  },
+  currencyTabText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.colors.textSecondary,
+  },
+  currencyTabTextActive: {
+    color: Theme.colors.accentText,
+    fontWeight: '700',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 10,
+  },
+  statCardOwe: {
+    borderColor: 'rgba(199, 127, 120, 0.4)',
+  },
+  statCardOwed: {
+    borderColor: 'rgba(134, 169, 139, 0.4)',
+  },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Theme.colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statIconContainerOwe: {
+    backgroundColor: 'rgba(199, 127, 120, 0.15)',
+  },
+  statIconContainerOwed: {
+    backgroundColor: 'rgba(134, 169, 139, 0.15)',
+  },
+  statContent: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.colors.textMuted,
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Theme.colors.textPrimary,
+    marginTop: 2,
+  },
+  statValueOwe: {
+    color: Theme.colors.status.error,
+  },
+  statValueOwed: {
+    color: Theme.colors.status.success,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionLink: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.colors.accent,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Theme.colors.textMuted,
+    marginTop: 2,
+  },
+  emptySettlementBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 8,
+  },
+  emptySettlementText: {
+    fontSize: 13,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  settleModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  settleModalRowUserSender: {
+    borderColor: 'rgba(199, 127, 120, 0.5)',
+    backgroundColor: 'rgba(199, 127, 120, 0.08)',
+  },
+  settleModalRowUserReceiver: {
+    borderColor: 'rgba(134, 169, 139, 0.5)',
+    backgroundColor: 'rgba(134, 169, 139, 0.08)',
+  },
+  settleRowTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+  },
+  settleRowSubtitle: {
+    fontSize: 11,
+    color: Theme.colors.textMuted,
+    marginTop: 2,
+  },
+  settleRowAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Theme.colors.textPrimary,
+    marginLeft: 8,
   },
 });

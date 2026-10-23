@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { Theme } from '@/constants/theme';
 
+import { BrandLogo } from '@/components/common/BrandLogo';
+
 export default function TabsLayout() {
   return (
     <Tabs
@@ -32,7 +34,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Trips',
-          headerTitle: 'TravelSync',
+          headerTitle: () => <BrandLogo size="sm" />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="airplane-outline" size={size} color={color ? String(color) : Theme.colors.accent} />
           ),

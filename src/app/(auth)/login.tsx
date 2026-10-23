@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +15,7 @@ import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { GoogleButton } from '@/components/common/GoogleButton';
 import { LoadingState } from '@/components/common/LoadingState';
+import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 
 export default function LoginScreen() {
@@ -84,14 +84,10 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Official Brand Header */}
-        <View style={styles.brandContainer}>
-          <Image
-            source={require('../../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.brandTitle}>Travel Sync</Text>
-        </View>
+        <BrandLogo
+          size="xl"
+          containerStyle={styles.brandContainer}
+        />
 
         {/* Form Container (Carbon Card Surface) */}
         <View style={styles.formCard}>
@@ -190,7 +186,7 @@ export default function LoginScreen() {
 
         {/* Security / Architecture Footer */}
         <View style={styles.securityNote}>
-          <Ionicons name="shield-checkmark-outline" size={14} color={Theme.colors.textMuted} />
+          <BrandLogo size="xs" showText={false} />
           <Text style={styles.securityText}>
             Secured by Firebase Auth & verified against TravelSync API.
           </Text>
