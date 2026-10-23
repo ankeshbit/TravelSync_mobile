@@ -10,11 +10,13 @@ import {
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
 } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import { getCurrentUser, logoutBackend } from '@/api/auth';
 import { User } from '@/types/auth';
 import { getErrorMessage } from '@/api/client';
+import { useNativeGoogleAuth } from '@/services/nativeGoogleAuth';
 
 interface AuthContextType {
   user: User | null;
@@ -38,6 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Platform-safe native Google OAuth hook
+  const { isConfigured, isReady, promptGoogleAsync } = useNativeGoogleAuth();
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -97,36 +102,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-
+      // 1. Web Platform: Use Firebase Web popup flow matching existing TravelSync website
       if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
         const result = await signInWithPopup(auth, provider);
         setFirebaseUser(result.user);
         await syncBackendUser();
         return result.user;
-      } else {
-        // Native mobile flow
-        try {
-          const result = await signInWithPopup(auth, provider);
-          setFirebaseUser(result.user);
-          await syncBackendUser();
-          return result.user;
-        } catch (popupErr: any) {
-          // If popup is blocked on mobile webview, provide a helpful diagnostic
-          if (popupErr?.code === 'auth/popup-blocked') {
-            throw new Error('Sign-in window was blocked. Please allow popups or use email sign in.');
-          }
-          throw popupErr;
-        }
       }
+
+      // 2. Native Mobile Platform (Android / iOS): Use Expo AuthSession to obtain Google ID token
+      if (!isConfigured) {
+        const clientHelp =
+          `Google Sign-In is not configured for native ${Platform.OS}. ` +
+          `Please configure EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID (and ${
+            Platform.OS === 'android' ? 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID' : 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID'
+          }) in your .env file from the Firebase Console (Authentication > Sign-in method > Google).`;
+        setError(clientHelp);
+        throw new Error(clientHelp);
+      }
+
+      if (!isReady) {
+        const initError = 'Google Sign-In is still preparing. Please try again in a moment.';
+        setError(initError);
+        throw new Error(initError);
+      }
+
+      const response = await promptGoogleAsync();
+
+      if (
+        response.type === 'cancel' ||
+        response.type === 'dismiss' ||
+        response.type === 'opened' ||
+        response.type === 'locked'
+      ) {
+        // User voluntarily dismissed or cancelled the Google prompt
+        return null;
+      }
+
+      if (response.type === 'error') {
+        const errorDetail = response.error ? `: ${response.error.message || response.error}` : '';
+        const failureMessage = `Google Sign-In failed${errorDetail}`;
+        setError(failureMessage);
+        throw new Error(failureMessage);
+      }
+
+      if (response.type !== 'success') {
+        const failureMessage = `Google Sign-In was not completed (${response.type})`;
+        setError(failureMessage);
+        throw new Error(failureMessage);
+      }
+
+      const idToken = response.params?.id_token;
+      if (!idToken) {
+        const missingTokenError =
+          'Google authentication succeeded, but no ID token was returned. ' +
+          'Ensure EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is set to the Web OAuth Client ID from Google Cloud Console.';
+        setError(missingTokenError);
+        throw new Error(missingTokenError);
+      }
+
+      // 3. Create Firebase credential using the verified Google ID token
+      const credential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(auth, credential);
+
+      setFirebaseUser(userCredential.user);
+
+      // 4. Synchronize with existing Express backend & Neon PostgreSQL database
+      await syncBackendUser();
+
+      return userCredential.user;
     } catch (err: any) {
-      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.toLowerCase().includes('cancel') ||
+        err?.message?.toLowerCase().includes('dismiss')
+      ) {
         return null; // User cancelled, no error banner needed
       }
+
       const friendlyMessage = getFirebaseErrorMessage(err);
       setError(friendlyMessage);
-      throw new Error(friendlyMessage);
+      throw err instanceof Error ? err : new Error(friendlyMessage);
     } finally {
       setIsLoading(false);
     }
@@ -220,6 +279,10 @@ function getFirebaseErrorMessage(error: any): string {
       return 'Too many failed attempts. Please try again later.';
     case 'auth/popup-closed-by-user':
       return 'Sign-in window was closed. Please try again.';
+    case 'auth/argument-error':
+      return 'Authentication configuration error: signInWithPopup is not supported in native React Native. Google OAuth credentials are required.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).';
     default:
       return error?.message || 'Authentication failed. Please try again.';
   }

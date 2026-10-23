@@ -32,3 +32,9 @@ export const FIREBASE_CONFIG = {
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '698271050805',
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:698271050805:web:3649fdea2ae2bbf15e157c',
 };
+
+export const GOOGLE_AUTH_CONFIG = {
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
+  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '',
+};

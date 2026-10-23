@@ -2,7 +2,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   initializeAuth,
   getAuth,
-  browserLocalPersistence,
   Auth,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,10 +13,10 @@ const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApp();
 let auth: Auth;
 try {
   if (Platform.OS === 'web') {
-    auth = initializeAuth(app, {
-      persistence: browserLocalPersistence,
-    });
+    // Web: getAuth includes browserPopupRedirectResolver and browserLocalPersistence
+    auth = getAuth(app);
   } else {
+    // Native (iOS/Android): initializeAuth with AsyncStorage persistence
     // @ts-ignore
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getReactNativePersistence } = require('@firebase/auth/dist/rn/index.js');
