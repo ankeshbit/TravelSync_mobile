@@ -8,11 +8,25 @@ import {
   Modal,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useTrip, useTripPlaces, useAddTripPlace, useDeleteTripPlace, useTripExpenses } from '@/hooks/useTripDetails';
+import { useAuth } from '@/context/AuthContext';
+import {
+  useTrip,
+  useTripPlaces,
+  useAddTripPlace,
+  useDeleteTripPlace,
+  useUpdatePlaceNote,
+  useTripExpenses,
+  useTripMembers,
+  useAddTripMember,
+  useRemoveTripMember,
+  useLeaveTrip,
+  useAiTripSuggestions,
+} from '@/hooks/useTripDetails';
 import { PlaceCard } from '@/components/trips/PlaceCard';
 import { LoadingState } from '@/components/common/LoadingState';
 import { ErrorState } from '@/components/common/ErrorState';
@@ -20,22 +34,37 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
-import { Place, Expense } from '@/types/trip';
+import { Place, Expense, AiSuggestion } from '@/types/trip';
 import { Theme } from '@/constants/theme';
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'itinerary' | 'overview'>('itinerary');
-  const [modalVisible, setModalVisible] = useState(false);
 
-  // New Place Form state
+  // Add Place Modal state
+  const [modalVisible, setModalVisible] = useState(false);
   const [placeName, setPlaceName] = useState('');
   const [placeAddress, setPlaceAddress] = useState('');
   const [placeDay, setPlaceDay] = useState('1');
   const [placeCategory, setPlaceCategory] = useState('attraction');
   const [placeDuration, setPlaceDuration] = useState('60');
   const [placeNote, setPlaceNote] = useState('');
+
+  // Edit Note Modal state
+  const [editingPlace, setEditingPlace] = useState<Place | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
+
+  // Add Member Modal state
+  const [memberModalVisible, setMemberModalVisible] = useState(false);
+  const [memberEmail, setMemberEmail] = useState('');
+
+  // AI Suggestions Modal state
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [loadingAi, setLoadingAi] = useState(false);
 
   const {
     data: trip,
@@ -56,12 +85,29 @@ export default function TripDetailsScreen() {
     refetch: refetchExpenses,
   } = useTripExpenses(id || '');
 
+  const {
+    data: members,
+    refetch: refetchMembers,
+  } = useTripMembers(id || '');
+
   const addPlaceMutation = useAddTripPlace(id || '');
   const deletePlaceMutation = useDeleteTripPlace(id || '');
+  const updateNoteMutation = useUpdatePlaceNote(id || '');
+  const addMemberMutation = useAddTripMember(id || '');
+  const removeMemberMutation = useRemoveTripMember(id || '');
+  const leaveTripMutation = useLeaveTrip(id || '');
+  const aiSuggestionsMutation = useAiTripSuggestions(id || '');
 
   const onRefresh = async () => {
-    await Promise.all([refetchTrip(), refetchPlaces(), refetchExpenses()]);
+    await Promise.all([
+      refetchTrip(),
+      refetchPlaces(),
+      refetchExpenses(),
+      refetchMembers(),
+    ]);
   };
+
+  const isOwner = trip?.ownerId === user?.id || trip?.owner?.id === user?.id;
 
   const handleAddPlace = async () => {
     if (!placeName.trim()) {
@@ -72,7 +118,7 @@ export default function TripDetailsScreen() {
     try {
       await addPlaceMutation.mutateAsync({
         name: placeName.trim(),
-        address: placeAddress.trim() || 'General location',
+        address: placeAddress.trim() || 'General area',
         lat: 0.0,
         lng: 0.0,
         dayNumber: parseInt(placeDay, 10) || 1,
@@ -91,7 +137,7 @@ export default function TripDetailsScreen() {
   };
 
   const handleDeletePlace = (place: Place) => {
-    Alert.alert('Delete Place', `Remove "${place.name}" from the itinerary?`, [
+    Alert.alert('Delete Stop', `Remove "${place.name}" from the itinerary?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -101,8 +147,110 @@ export default function TripDetailsScreen() {
     ]);
   };
 
+  const handleOpenEditNote = (place: Place) => {
+    setEditingPlace(place);
+    setEditingNoteText(place.note || '');
+  };
+
+  const handleSaveNote = async () => {
+    if (!editingPlace) return;
+    try {
+      await updateNoteMutation.mutateAsync({
+        placeId: editingPlace.id,
+        note: editingNoteText.trim(),
+      });
+      setEditingPlace(null);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to update note.');
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!memberEmail.trim()) {
+      Alert.alert('Required', 'Please enter an email address to invite.');
+      return;
+    }
+
+    try {
+      await addMemberMutation.mutateAsync(memberEmail.trim());
+      setMemberModalVisible(false);
+      setMemberEmail('');
+      Alert.alert('Success', `Invited ${memberEmail} to join the trip.`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to add member.');
+    }
+  };
+
+  const handleRemoveMember = (memberUserId: string, memberName: string) => {
+    Alert.alert('Remove Member', `Remove ${memberName} from this trip?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await removeMemberMutation.mutateAsync(memberUserId);
+          } catch (err: any) {
+            Alert.alert('Error', err?.response?.data?.message || 'Failed to remove member.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleLeaveTrip = () => {
+    Alert.alert('Leave Trip', 'Are you sure you want to leave this trip? You will lose access to its itinerary and expenses.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Leave Trip',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await leaveTripMutation.mutateAsync();
+            router.replace('/(tabs)');
+          } catch (err: any) {
+            Alert.alert('Error', err?.response?.data?.message || 'Failed to leave trip.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleLoadAiSuggestions = async () => {
+    setAiModalVisible(true);
+    if (aiSuggestions.length > 0) return;
+
+    try {
+      setLoadingAi(true);
+      const res = await aiSuggestionsMutation.mutateAsync();
+      setAiSuggestions(Array.isArray(res) ? res : (res as any)?.suggestions || []);
+    } catch (err: any) {
+      Alert.alert('AI Guide Error', err?.response?.data?.message || 'Failed to generate suggestions. Please check your backend connection.');
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
+  const handleAddAiSuggestionToTrip = async (sug: AiSuggestion) => {
+    try {
+      await addPlaceMutation.mutateAsync({
+        name: sug.title || sug.name || 'AI Activity',
+        address: sug.location || trip?.destination || 'Destination Area',
+        lat: 0.0,
+        lng: 0.0,
+        dayNumber: 1,
+        category: sug.category || 'attraction',
+        duration: sug.duration || 60,
+        note: sug.description || '',
+      });
+      Alert.alert('Added', `"${sug.title || sug.name}" added to Day 1 itinerary!`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+    }
+  };
+
   if (tripLoading) {
-    return <LoadingState message="Loading trip itinerary..." fullscreen />;
+    return <LoadingState message="Loading trip details..." fullscreen />;
   }
 
   if (tripError || !trip) {
@@ -129,6 +277,8 @@ export default function TripDetailsScreen() {
     .sort((a, b) => a - b);
 
   const totalExpenseSum = (expenses || []).reduce((acc: number, curr: Expense) => acc + (Number(curr.amount) || 0), 0);
+  const activeMembers = members || trip.members || [];
+  const totalMemberCount = 1 + activeMembers.length;
 
   return (
     <View style={styles.container}>
@@ -143,25 +293,102 @@ export default function TripDetailsScreen() {
           />
         }
       >
-        {/* Cover Photo / Header Banner */}
-        {trip.coverImageUrl ? (
-          <Image source={{ uri: trip.coverImageUrl }} style={styles.heroImage} contentFit="cover" />
-        ) : null}
+        {/* Hero Banner with Cover Photo */}
+        <View style={styles.heroContainer}>
+          {trip.coverImageUrl ? (
+            <Image source={{ uri: trip.coverImageUrl }} style={styles.heroImage} contentFit="cover" />
+          ) : (
+            <View style={[styles.heroImage, styles.heroPlaceholder]} />
+          )}
+          <View style={styles.heroOverlay} />
 
-        <View style={styles.headerInfo}>
-          <Text style={styles.destination}>{trip.destination}</Text>
-          <Text style={styles.tripName}>{trip.name}</Text>
+          {/* Quick Header Action Icons */}
+          <View style={styles.headerFloatingActions}>
+            <TouchableOpacity
+              style={styles.floatingActionBtn}
+              onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
 
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <Ionicons name="calendar-outline" size={14} color={Theme.colors.textMuted} />
-              <Text style={styles.metaText}>
-                {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
+          <View style={styles.heroContent}>
+            <Text style={styles.tripName}>{trip.name}</Text>
+            <View style={styles.heroMetaRow}>
+              <View style={styles.heroMetaItem}>
+                <Ionicons name="location" size={14} color={Theme.colors.accent} />
+                <Text style={styles.heroMetaText} numberOfLines={1}>{trip.destination}</Text>
+              </View>
+              <View style={styles.heroMetaItem}>
+                <Ionicons name="calendar-outline" size={14} color={Theme.colors.textSecondary} />
+                <Text style={styles.heroMetaText}>
+                  {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Quick Actions Row */}
+        <View style={styles.quickActionsBar}>
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={() => router.push({ pathname: '/trip/expenses', params: { tripId: id } })}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(167, 169, 154, 0.15)' }]}>
+              <Ionicons name="wallet-outline" size={20} color={Theme.colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.quickActionTitle}>Expenses</Text>
+              <Text style={styles.quickActionSub}>
+                {trip.currency} {totalExpenseSum.toLocaleString()} spent
               </Text>
             </View>
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>{trip.status.toUpperCase()}</Text>
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionCard}
+            onPress={handleLoadAiSuggestions}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(134, 169, 139, 0.15)' }]}>
+              <Ionicons name="sparkles" size={20} color={Theme.colors.status.success} />
             </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.quickActionTitle}>AI Travel Guide</Text>
+              <Text style={styles.quickActionSub}>Itinerary suggestions</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* 4 Stat Widgets Row */}
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Ionicons name="people-outline" size={18} color={Theme.colors.textMuted} />
+            <Text style={styles.statValue}>{totalMemberCount}</Text>
+            <Text style={styles.statLabel}>Members</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Ionicons name="cash-outline" size={18} color={Theme.colors.textMuted} />
+            <Text style={styles.statValue}>
+              {trip.currency} {trip.budgetPerPerson ? Number(trip.budgetPerPerson).toLocaleString() : '—'}
+            </Text>
+            <Text style={styles.statLabel}>Budget/p</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Ionicons name="receipt-outline" size={18} color={Theme.colors.textMuted} />
+            <Text style={styles.statValue}>{expenses?.length || 0}</Text>
+            <Text style={styles.statLabel}>Expenses</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Ionicons name="location-outline" size={18} color={Theme.colors.textMuted} />
+            <Text style={styles.statValue}>{(places || []).length}</Text>
+            <Text style={styles.statLabel}>Stops</Text>
           </View>
         </View>
 
@@ -233,7 +460,12 @@ export default function TripDetailsScreen() {
                   </View>
 
                   {groupedPlaces[day].map((p) => (
-                    <PlaceCard key={p.id} place={p} onDelete={() => handleDeletePlace(p)} />
+                    <PlaceCard
+                      key={p.id}
+                      place={p}
+                      onDelete={() => handleDeletePlace(p)}
+                      onEditNote={() => handleOpenEditNote(p)}
+                    />
                   ))}
                 </View>
               ))
@@ -249,9 +481,15 @@ export default function TripDetailsScreen() {
                 <Text style={styles.detailValue}>{trip.destination}</Text>
               </View>
               <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <View style={styles.statusBadge}>
+                  <Text style={styles.statusText}>{trip.status?.toUpperCase() || 'PLANNING'}</Text>
+                </View>
+              </View>
+              <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Budget Per Person</Text>
                 <Text style={styles.detailValue}>
-                  {trip.currency} {trip.budgetPerPerson || 'Not specified'}
+                  {trip.currency} {trip.budgetPerPerson ? Number(trip.budgetPerPerson).toLocaleString() : 'Not specified'}
                 </Text>
               </View>
               <View style={styles.detailRow}>
@@ -260,13 +498,30 @@ export default function TripDetailsScreen() {
                   {trip.currency} {totalExpenseSum.toLocaleString()}
                 </Text>
               </View>
+              <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.detailLabel}>Duration</Text>
+                <Text style={styles.detailValue}>
+                  {Math.max(1, Math.ceil((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)))} days
+                </Text>
+              </View>
             </Card>
 
-            <Text style={[styles.sectionHeading, { marginTop: 20 }]}>
-              Trip Members ({1 + (trip.members?.length || 0)})
-            </Text>
+            {/* Members Section */}
+            <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
+              <Text style={styles.sectionHeading}>
+                Trip Members ({totalMemberCount})
+              </Text>
+              <TouchableOpacity
+                style={styles.addMemberBtn}
+                onPress={() => setMemberModalVisible(true)}
+              >
+                <Ionicons name="person-add" size={14} color={Theme.colors.accent} />
+                <Text style={styles.addMemberBtnText}>Invite</Text>
+              </TouchableOpacity>
+            </View>
+
             <Card style={styles.overviewCard}>
-              {/* Owner */}
+              {/* Trip Owner */}
               <View style={styles.memberRow}>
                 <View style={styles.memberAvatar}>
                   <Text style={styles.memberAvatarText}>
@@ -283,20 +538,45 @@ export default function TripDetailsScreen() {
               </View>
 
               {/* Members */}
-              {(trip.members || []).map((m) => (
-                <View key={m.id} style={styles.memberRow}>
-                  <View style={[styles.memberAvatar, { backgroundColor: Theme.colors.surfaceElevated, borderWidth: 1, borderColor: Theme.colors.border }]}>
-                    <Text style={[styles.memberAvatarText, { color: Theme.colors.textPrimary }]}>
-                      {(m.user?.name || 'M').charAt(0).toUpperCase()}
-                    </Text>
+              {activeMembers.map((m: any) => {
+                const memberUser = m.user || m;
+                const memberUserId = memberUser.id || m.userId;
+                return (
+                  <View key={m.id || memberUserId} style={styles.memberRow}>
+                    <View style={[styles.memberAvatar, { backgroundColor: Theme.colors.surfaceElevated, borderWidth: 1, borderColor: Theme.colors.border }]}>
+                      <Text style={[styles.memberAvatarText, { color: Theme.colors.textPrimary }]}>
+                        {(memberUser.name || memberUser.email || 'M').charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberName}>{memberUser.name || 'Co-traveler'}</Text>
+                      <Text style={styles.memberEmail}>{memberUser.email || ''}</Text>
+                    </View>
+                    {isOwner ? (
+                      <TouchableOpacity
+                        onPress={() => handleRemoveMember(memberUserId, memberUser.name || memberUser.email)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="person-remove-outline" size={18} color={Theme.colors.status.error} />
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
-                  <View style={styles.memberInfo}>
-                    <Text style={styles.memberName}>{m.user?.name || 'Co-traveler'}</Text>
-                    <Text style={styles.memberEmail}>{m.user?.email || ''}</Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </Card>
+
+            {/* Leave Trip Option (for non-owners) */}
+            {!isOwner && (
+              <View style={{ marginTop: 24 }}>
+                <Button
+                  title="Leave Trip"
+                  variant="outline"
+                  onPress={handleLeaveTrip}
+                  isLoading={leaveTripMutation.isPending}
+                  icon={<Ionicons name="exit-outline" size={18} color={Theme.colors.status.error} />}
+                />
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -348,26 +628,195 @@ export default function TripDetailsScreen() {
 
               <Input
                 label="Category"
-                placeholder="attraction, food, hotel, nature"
+                placeholder="attraction, restaurant, hotel..."
                 value={placeCategory}
                 onChangeText={setPlaceCategory}
               />
 
               <Input
-                label="Notes / Tips (optional)"
-                placeholder="e.g. Book tickets online in advance"
+                label="Notes / Tips"
+                placeholder="e.g. Pre-booked tickets required"
                 value={placeNote}
                 onChangeText={setPlaceNote}
                 multiline
+                numberOfLines={3}
               />
 
-              <Button
-                title="Add to Itinerary"
-                onPress={handleAddPlace}
-                isLoading={addPlaceMutation.isPending}
-                style={{ marginTop: 8 }}
-              />
+              <View style={styles.modalActions}>
+                <Button
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => setModalVisible(false)}
+                  style={{ flex: 1, marginRight: 8 }}
+                />
+                <Button
+                  title="Save Stop"
+                  onPress={handleAddPlace}
+                  isLoading={addPlaceMutation.isPending}
+                  style={{ flex: 1, marginLeft: 8 }}
+                />
+              </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Place Note Modal */}
+      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Stop Note</Text>
+              <TouchableOpacity onPress={() => setEditingPlace(null)}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: Theme.colors.accent, fontSize: 13, marginBottom: 14 }}>
+              {editingPlace?.name}
+            </Text>
+
+            <Input
+              label="Stop Note / Instructions"
+              placeholder="Add details, opening hours, confirmation code..."
+              value={editingNoteText}
+              onChangeText={setEditingNoteText}
+              multiline
+              numberOfLines={4}
+            />
+
+            <View style={styles.modalActions}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setEditingPlace(null)}
+                style={{ flex: 1, marginRight: 8 }}
+              />
+              <Button
+                title="Update Note"
+                onPress={handleSaveNote}
+                isLoading={updateNoteMutation.isPending}
+                style={{ flex: 1, marginLeft: 8 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Member Modal */}
+      <Modal visible={memberModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Invite Co-Traveler</Text>
+              <TouchableOpacity onPress={() => setMemberModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: Theme.colors.textSecondary, fontSize: 13, marginBottom: 16 }}>
+              Enter the registered email of the user you want to collaborate with on this trip.
+            </Text>
+
+            <Input
+              label="User Email Address"
+              placeholder="e.g. friend@example.com"
+              value={memberEmail}
+              onChangeText={setMemberEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              leftIcon={<Ionicons name="mail-outline" size={18} color={Theme.colors.textMuted} />}
+            />
+
+            <View style={styles.modalActions}>
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={() => setMemberModalVisible(false)}
+                style={{ flex: 1, marginRight: 8 }}
+              />
+              <Button
+                title="Send Invite"
+                onPress={handleAddMember}
+                isLoading={addMemberMutation.isPending}
+                style={{ flex: 1, marginLeft: 8 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* AI Suggestions Modal */}
+      <Modal visible={aiModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
+                <Text style={styles.modalTitle}>AI Itinerary Suggestions</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAiModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: Theme.colors.textSecondary, fontSize: 12, marginBottom: 14 }}>
+              Tailored recommendations for {trip.destination} powered by TravelSync AI.
+            </Text>
+
+            {loadingAi ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={Theme.colors.accent} />
+                <Text style={{ color: Theme.colors.textSecondary, marginTop: 14, fontSize: 13 }}>
+                  Synthesizing curated activities...
+                </Text>
+              </View>
+            ) : aiSuggestions.length === 0 ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                <Ionicons name="bulb-outline" size={36} color={Theme.colors.textMuted} />
+                <Text style={{ color: Theme.colors.textPrimary, fontWeight: '600', marginTop: 10 }}>
+                  No recommendations yet
+                </Text>
+                <Button
+                  title="Generate Suggestions"
+                  onPress={handleLoadAiSuggestions}
+                  style={{ marginTop: 14 }}
+                />
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+                {aiSuggestions.map((sug, idx) => (
+                  <View key={idx} style={styles.aiSuggestionCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.aiSugTitle}>{sug.title || sug.name}</Text>
+                      {sug.description ? (
+                        <Text style={styles.aiSugDesc}>{sug.description}</Text>
+                      ) : null}
+                      <View style={styles.aiSugMetaRow}>
+                        <Text style={styles.aiSugTag}>{sug.category || 'Spot'}</Text>
+                        {sug.duration ? (
+                          <Text style={styles.aiSugTime}>~{sug.duration} mins</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.aiAddBtn}
+                      onPress={() => handleAddAiSuggestionToTrip(sug)}
+                    >
+                      <Ionicons name="add" size={16} color={Theme.colors.accentText} />
+                      <Text style={styles.aiAddBtnText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <Button
+              title="Close"
+              variant="outline"
+              onPress={() => setAiModalVisible(false)}
+              style={{ marginTop: 16 }}
+            />
           </View>
         </View>
       </Modal>
@@ -383,113 +832,211 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 40,
   },
+  heroContainer: {
+    position: 'relative',
+    height: 220,
+    width: '100%',
+  },
   heroImage: {
     width: '100%',
-    height: 180,
+    height: '100%',
+  },
+  heroPlaceholder: {
     backgroundColor: Theme.colors.surfaceElevated,
   },
-  headerInfo: {
-    padding: 16,
-    backgroundColor: Theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border,
+  heroOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(17, 18, 16, 0.65)',
   },
-  destination: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.colors.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
+  headerFloatingActions: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 10,
+  },
+  floatingActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroContent: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
   },
   tripName: {
     fontSize: 24,
     fontWeight: '800',
-    color: Theme.colors.textPrimary,
-    marginBottom: 10,
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
-  metaRow: {
+  heroMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
   },
-  metaItem: {
+  heroMetaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  metaText: {
-    fontSize: 13,
-    color: Theme.colors.textMuted,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    backgroundColor: 'rgba(167, 169, 154, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(167, 169, 154, 0.25)',
+    gap: 4,
+    backgroundColor: 'rgba(20, 21, 18, 0.7)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: Theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  statusText: {
-    fontSize: 11,
+  heroMetaText: {
+    color: '#D5D3CA',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  quickActionsBar: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    marginTop: 14,
+  },
+  quickActionCard: {
+    flex: 1,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    borderRadius: Theme.borderRadius.lg,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quickActionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickActionTitle: {
+    fontSize: 13,
     fontWeight: '700',
-    color: Theme.colors.accent,
+    color: Theme.colors.textPrimary,
+  },
+  quickActionSub: {
+    fontSize: 11,
+    color: Theme.colors.textMuted,
+    marginTop: 1,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginTop: 14,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.borderRadius.md,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 10,
+    color: Theme.colors.textMuted,
+    textTransform: 'uppercase',
   },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: Theme.colors.surface,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border,
-    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 18,
+    borderRadius: Theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    padding: 4,
   },
   tabButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: Theme.borderRadius.sm,
     gap: 6,
   },
   activeTabButton: {
-    borderBottomColor: Theme.colors.accent,
+    backgroundColor: Theme.colors.surfaceElevated,
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Theme.colors.textMuted,
   },
   activeTabText: {
-    color: Theme.colors.accent,
+    color: Theme.colors.textPrimary,
   },
   tabContent: {
     padding: 16,
   },
   sectionTitleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
   sectionHeading: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Theme.colors.textPrimary,
   },
   addPlaceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
     backgroundColor: Theme.colors.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 8,
-    gap: 4,
+    borderRadius: Theme.borderRadius.md,
   },
   addPlaceBtnText: {
-    color: Theme.colors.accentText,
-    fontWeight: '600',
     fontSize: 12,
+    fontWeight: '700',
+    color: Theme.colors.accentText,
+  },
+  addMemberBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(167, 169, 154, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 169, 154, 0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Theme.borderRadius.md,
+  },
+  addMemberBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.colors.accent,
   },
   dayGroup: {
     marginBottom: 20,
@@ -498,42 +1045,57 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   dayBadge: {
     backgroundColor: Theme.colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: Theme.colors.border,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: Theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
   },
   dayBadgeText: {
-    color: Theme.colors.textPrimary,
     fontSize: 12,
     fontWeight: '700',
+    color: Theme.colors.textPrimary,
   },
   dayCount: {
     fontSize: 12,
     color: Theme.colors.textMuted,
   },
   overviewCard: {
-    marginTop: 8,
+    padding: 16,
   },
   detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Theme.colors.border,
   },
   detailLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: Theme.colors.textMuted,
-    marginBottom: 2,
   },
   detailValue: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: Theme.colors.textPrimary,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(134, 169, 139, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(134, 169, 139, 0.3)',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.status.success,
   },
   memberRow: {
     flexDirection: 'row',
@@ -541,6 +1103,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Theme.colors.border,
+    gap: 12,
   },
   memberAvatar: {
     width: 36,
@@ -549,51 +1112,50 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
   memberAvatarText: {
-    color: Theme.colors.accentText,
-    fontWeight: '700',
     fontSize: 14,
+    fontWeight: '700',
+    color: Theme.colors.accentText,
   },
   memberInfo: {
     flex: 1,
   },
   memberName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Theme.colors.textPrimary,
   },
   memberEmail: {
-    fontSize: 12,
+    fontSize: 11,
     color: Theme.colors.textMuted,
+    marginTop: 1,
   },
   ownerBadge: {
-    backgroundColor: 'rgba(167, 169, 154, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(167, 169, 154, 0.25)',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(167, 169, 154, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 169, 154, 0.3)',
   },
   ownerBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: '700',
     color: Theme.colors.accent,
-    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    padding: 16,
   },
   modalContent: {
     backgroundColor: Theme.colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: Theme.borderRadius.lg,
+    padding: 20,
     borderWidth: 1,
     borderColor: Theme.colors.border,
-    padding: 20,
-    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -602,11 +1164,71 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: Theme.colors.textPrimary,
   },
   formRow: {
     flexDirection: 'row',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    marginTop: 16,
+  },
+  aiSuggestionCard: {
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderRadius: Theme.borderRadius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  aiSugTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  aiSugDesc: {
+    fontSize: 11,
+    color: Theme.colors.textSecondary,
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+  aiSugMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiSugTag: {
+    fontSize: 10,
+    backgroundColor: 'rgba(167, 169, 154, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    color: Theme.colors.accent,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  aiSugTime: {
+    fontSize: 10,
+    color: Theme.colors.textMuted,
+  },
+  aiAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: Theme.colors.accent,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Theme.borderRadius.sm,
+  },
+  aiAddBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.accentText,
   },
 });

@@ -159,6 +159,17 @@ export default function LoginScreen() {
             }
           />
 
+          {/* Forgot Password Link */}
+          <TouchableOpacity
+            onPress={() => router.push('/(auth)/forgot-password' as any)}
+            style={{ alignSelf: 'flex-end', marginTop: -6, marginBottom: 16 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={{ color: Theme.colors.accent, fontSize: 13, fontWeight: '500' }}>
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
+
           {/* Sign In Button (Sage Accent) */}
           <Button
             title="Sign In"

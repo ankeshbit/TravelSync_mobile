@@ -12,6 +12,7 @@ import { Theme } from '@/constants/theme';
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string | null;
+  helperText?: string;
   containerStyle?: ViewStyle;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
@@ -20,6 +21,7 @@ interface InputProps extends TextInputProps {
 export function Input({
   label,
   error,
+  helperText,
   containerStyle,
   style,
   leftIcon,
@@ -61,7 +63,11 @@ export function Input({
         />
         {rightIcon ? <View style={styles.iconRight}>{rightIcon}</View> : null}
       </View>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? (
+        <Text style={styles.errorText}>{error}</Text>
+      ) : helperText ? (
+        <Text style={styles.helperText}>{helperText}</Text>
+      ) : null}
     </View>
   );
 }
@@ -121,5 +127,10 @@ const styles = StyleSheet.create({
     color: Theme.colors.status.error,
     marginTop: 5,
     fontWeight: '500',
+  },
+  helperText: {
+    fontSize: 11,
+    color: Theme.colors.textMuted,
+    marginTop: 4,
   },
 });

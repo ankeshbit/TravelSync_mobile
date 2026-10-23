@@ -19,6 +19,41 @@ export async function updateProfile(data: { name: string }): Promise<User> {
 }
 
 /**
+ * Upload a profile photo.
+ */
+export async function uploadProfilePhoto(formData: FormData): Promise<{ picture: string }> {
+  const response = await api.post<{ picture: string }>('/auth/upload-photo', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+}
+
+/**
+ * Request an email verification OTP for account deletion.
+ */
+export async function sendDeleteOtp(email: string): Promise<{ success: boolean; message: string; devOtp?: string }> {
+  const response = await api.post('/auth/send-otp', { email, purpose: 'delete' });
+  return response.data;
+}
+
+/**
+ * Verify account deletion OTP.
+ */
+export async function verifyDeleteOtp(email: string, otp: string): Promise<{ success: boolean; valid: boolean }> {
+  const response = await api.post('/auth/verify-otp', { email, otp, purpose: 'delete' });
+  return response.data;
+}
+
+/**
+ * Permanently delete current user account.
+ */
+export async function deleteAccount(otp: string): Promise<void> {
+  await api.delete('/auth/me', { data: { otp } });
+}
+
+/**
  * Invalidate server-side session metadata on logout.
  */
 export async function logoutBackend(): Promise<void> {

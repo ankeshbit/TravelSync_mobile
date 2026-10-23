@@ -8,7 +8,7 @@ import {
   Platform,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCreateTrip } from '@/hooks/useTrips';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
@@ -24,11 +24,12 @@ function getInitialDates() {
 
 export default function CreateTripScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ destination?: string; name?: string }>();
   const createTripMutation = useCreateTrip();
 
   const [dates] = useState(getInitialDates);
-  const [name, setName] = useState('');
-  const [destination, setDestination] = useState('');
+  const [name, setName] = useState(params.name || (params.destination ? `Trip to ${params.destination}` : ''));
+  const [destination, setDestination] = useState(params.destination || '');
   const [startDate, setStartDate] = useState(dates.start);
   const [endDate, setEndDate] = useState(dates.end);
   const [budget, setBudget] = useState('10000');

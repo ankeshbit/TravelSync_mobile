@@ -67,6 +67,7 @@ export interface Trip {
   budgetPerPerson: number;
   currency: string;
   ownerId: string;
+  userId?: string;
   owner?: User;
   members?: TripMember[];
   places?: Place[];
@@ -104,6 +105,18 @@ export interface CreateTripDto {
   endDate: string;
   budgetPerPerson?: number;
   currency?: string;
+  coverImageUrl?: string;
+}
+
+export interface UpdateTripDto {
+  name?: string;
+  destination?: string;
+  startDate?: string;
+  endDate?: string;
+  budgetPerPerson?: number;
+  currency?: string;
+  status?: TripStatus;
+  coverImageUrl?: string;
 }
 
 export interface CreatePlaceDto {
@@ -116,4 +129,80 @@ export interface CreatePlaceDto {
   category?: string;
   duration?: number;
   note?: string;
+}
+
+export interface CreateExpenseDto {
+  title: string;
+  amount: number;
+  currency?: string;
+  category?: string;
+  paidById: string;
+  splitUserIds?: string[];
+}
+
+export interface BalanceSettlement {
+  from: string;
+  fromName: string;
+  to: string;
+  toName: string;
+  amount: number;
+  currency: string;
+}
+
+export interface MemberWithBalance {
+  id: string;
+  name: string;
+  email?: string;
+  picture?: string;
+  netBalance: number;
+  paid: number;
+  share: number;
+}
+
+export interface BalancesResponse {
+  currency?: string;
+  balanceMap?: Record<string, number>;
+  membersWithBalance?: MemberWithBalance[];
+  settlements?: BalanceSettlement[];
+  byCurrency?: Record<string, any>;
+}
+
+export interface ExploreDestination {
+  name: string;
+  tripCount: number;
+  coverImageUrl?: string;
+  averageBudgetPerPerson: number;
+}
+
+export interface AiSuggestion {
+  name: string;
+  title?: string;
+  location?: string;
+  category: string;
+  dayNumber: number;
+  description: string;
+  estimatedCost?: number;
+  duration?: number;
+}
+
+export interface AiChatRecommendation {
+  destination: string;
+  name?: string;
+  country?: string;
+  score?: number;
+  explanation?: string;
+  description?: string;
+  highlights?: string[];
+}
+
+export interface AiChatResponse {
+  reply?: string;
+  message?: string;
+  assistant_response?: string;
+  recommendations?: AiChatRecommendation[];
+  destinations?: any[];
+  structuredFollowUps?: any[];
+  followUps?: string[];
+  suggestions?: AiSuggestion[];
+  extracted_preferences?: Record<string, any>;
 }

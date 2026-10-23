@@ -7,9 +7,10 @@ import { Theme } from '@/constants/theme';
 interface PlaceCardProps {
   place: Place;
   onDelete?: () => void;
+  onEditNote?: () => void;
 }
 
-export function PlaceCard({ place, onDelete }: PlaceCardProps) {
+export function PlaceCard({ place, onDelete, onEditNote }: PlaceCardProps) {
   const categoryIcon = getCategoryIcon(place.category);
 
   return (
@@ -21,11 +22,18 @@ export function PlaceCard({ place, onDelete }: PlaceCardProps) {
       <View style={styles.details}>
         <View style={styles.header}>
           <Text style={styles.name} numberOfLines={1}>{place.name}</Text>
-          {onDelete ? (
-            <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="trash-outline" size={16} color={Theme.colors.textMuted} />
-            </TouchableOpacity>
-          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {onEditNote ? (
+              <TouchableOpacity onPress={onEditNote} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="create-outline" size={16} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+            {onDelete ? (
+              <TouchableOpacity onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="trash-outline" size={16} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         {place.address ? (

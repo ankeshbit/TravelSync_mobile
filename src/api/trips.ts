@@ -3,10 +3,18 @@ import {
   Trip,
   TripListResponse,
   TripSummary,
+  TripMember,
   Place,
   Expense,
+  Activity,
+  BalancesResponse,
   CreateTripDto,
+  UpdateTripDto,
   CreatePlaceDto,
+  CreateExpenseDto,
+  ExploreDestination,
+  AiSuggestion,
+  AiChatResponse,
 } from '@/types/trip';
 
 /**
@@ -44,10 +52,49 @@ export async function createTrip(data: CreateTripDto): Promise<Trip> {
 }
 
 /**
- * Delete a trip by ID.
+ * Update an existing trip.
+ */
+export async function updateTrip(id: string, data: UpdateTripDto): Promise<Trip> {
+  const response = await api.put<Trip>(`/trips/${id}`, data);
+  return response.data;
+}
+
+/**
+ * Delete a trip by ID (owner only).
  */
 export async function deleteTrip(id: string): Promise<void> {
   await api.delete(`/trips/${id}`);
+}
+
+/**
+ * Fetch members for a trip.
+ */
+export async function getTripMembers(tripId: string): Promise<TripMember[]> {
+  const response = await api.get<TripMember[]>(`/trips/${tripId}/members`);
+  return response.data;
+}
+
+/**
+ * Add a member to a trip by email address.
+ */
+export async function addTripMember(tripId: string, email: string): Promise<Trip> {
+  const response = await api.post<Trip>(`/trips/${tripId}/members`, { email: email.trim() });
+  return response.data;
+}
+
+/**
+ * Remove a member from a trip (owner only).
+ */
+export async function removeTripMember(tripId: string, userId: string): Promise<Trip> {
+  const response = await api.delete<Trip>(`/trips/${tripId}/members/${userId}`);
+  return response.data;
+}
+
+/**
+ * Leave a trip (member self-removal).
+ */
+export async function leaveTrip(tripId: string): Promise<void> {
+  await api.delete(`/trips/${tripId}/members/me`);
 }
 
 /**
@@ -74,9 +121,79 @@ export async function deleteTripPlace(tripId: string, placeId: string): Promise<
 }
 
 /**
+ * Update note for a specific place in the itinerary.
+ */
+export async function updatePlaceNote(tripId: string, placeId: string, note: string): Promise<Place> {
+  const response = await api.patch<Place>(`/trips/${tripId}/places/${placeId}/note`, { note });
+  return response.data;
+}
+
+/**
  * Fetch expenses for a trip.
  */
 export async function getTripExpenses(tripId: string): Promise<Expense[]> {
-  const response = await api.get<Expense[]>(`/trips/${tripId}/expenses`);
+  const response = await api.get<any>(`/trips/${tripId}/expenses`);
+  return response.data?.expenses ?? (Array.isArray(response.data) ? response.data : []);
+}
+
+/**
+ * Add an expense to a trip.
+ */
+export async function addTripExpense(tripId: string, data: CreateExpenseDto): Promise<Expense> {
+  const response = await api.post<Expense>(`/trips/${tripId}/expenses`, data);
+  return response.data;
+}
+
+/**
+ * Delete an expense from a trip.
+ */
+export async function deleteTripExpense(tripId: string, expenseId: string): Promise<void> {
+  await api.delete(`/trips/${tripId}/expenses/${expenseId}`);
+}
+
+/**
+ * Fetch expense balance settlement ("who owes whom").
+ */
+export async function getTripBalances(tripId: string): Promise<BalancesResponse> {
+  const response = await api.get<BalancesResponse>(`/trips/${tripId}/expenses/balances`);
+  return response.data;
+}
+
+/**
+ * Request AI itinerary suggestions for a trip.
+ */
+export async function getAiTripSuggestions(tripId: string, preferences?: Record<string, any>): Promise<AiSuggestion[]> {
+  const response = await api.post<any>(`/trips/${tripId}/ai-suggestions`, preferences || {});
+  return response.data?.suggestions ?? (Array.isArray(response.data) ? response.data : []);
+}
+
+/**
+ * Fetch trip audit / activity timeline.
+ */
+export async function getTripActivity(tripId: string): Promise<Activity[]> {
+  const response = await api.get<Activity[]>(`/trips/${tripId}/activity`);
+  return response.data;
+}
+
+/**
+ * Fetch aggregated destination cards for Explore.
+ */
+export async function getExploreDestinations(q?: string): Promise<ExploreDestination[]> {
+  const params: Record<string, string> = {};
+  if (q && q.trim()) {
+    params.q = q.trim();
+  }
+  const response = await api.get<any>('/explore/destinations', { params });
+  return Array.isArray(response.data) ? response.data : (response.data?.destinations || []);
+}
+
+/**
+ * Send a chat message to the TravelSync AI recommendation assistant.
+ */
+export async function chatWithAiGuide(message: string, previousPreferences?: Record<string, any>): Promise<AiChatResponse> {
+  const response = await api.post<AiChatResponse>('/recommendations/chat', {
+    message: message.trim(),
+    previous_preferences: previousPreferences || null,
+  });
   return response.data;
 }

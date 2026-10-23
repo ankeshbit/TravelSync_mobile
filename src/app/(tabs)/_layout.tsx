@@ -39,6 +39,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explore',
+          headerTitle: 'Explore Destinations',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="compass-outline" size={size} color={color ? String(color) : Theme.colors.textMuted} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

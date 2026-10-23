@@ -35,8 +35,22 @@ export default function RootLayout() {
             <Stack.Screen
               name="trip/[id]"
               options={{
-                title: 'Trip Itinerary',
+                title: 'Trip Details',
                 headerBackTitle: 'Back',
+              }}
+            />
+            <Stack.Screen
+              name="trip/expenses"
+              options={{
+                title: 'Trip Expenses',
+                headerBackTitle: 'Trip',
+              }}
+            />
+            <Stack.Screen
+              name="trip/edit"
+              options={{
+                title: 'Edit Trip',
+                headerBackTitle: 'Trip',
               }}
             />
             <Stack.Screen
