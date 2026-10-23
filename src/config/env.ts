@@ -9,6 +9,9 @@ import { Platform } from 'react-native';
 export const getApiBaseUrl = (): string => {
   const customUrl = process.env.EXPO_PUBLIC_API_URL;
   if (customUrl && customUrl.trim()) {
+    if (Platform.OS === 'web' && customUrl.includes('10.0.2.2')) {
+      return customUrl.replace('10.0.2.2', 'localhost').trim().replace(/\/+$/, '');
+    }
     return customUrl.trim().replace(/\/+$/, '');
   }
 
