@@ -25,10 +25,10 @@ export const getApiBaseUrl = (): string => {
 export const API_BASE_URL = getApiBaseUrl();
 
 export const FIREBASE_CONFIG = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyExampleKey-TravelSyncMobile',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'travelsync-app.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'travelsync-app',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'travelsync-app.appspot.com',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1234567890',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:1234567890:web:abcdef123456',
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyALzehITyb7-KJC7shQf_1kPPC1uaLuT-c',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'travelsync-2509e.firebaseapp.com',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'travelsync-2509e',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'travelsync-2509e.firebasestorage.app',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '698271050805',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:698271050805:web:3649fdea2ae2bbf15e157c',
 };
