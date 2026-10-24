@@ -1,19 +1,22 @@
 import { Platform } from 'react-native';
 
-// In production, validate required env vars at startup
+// In production, validate required env vars at startup using literal property access
+// so that Expo Metro bundler can statically inline EXPO_PUBLIC_* variables into release bundles.
 if (!__DEV__) {
-  const required = [
-    'EXPO_PUBLIC_API_URL',
-    'EXPO_PUBLIC_FIREBASE_API_KEY',
-    'EXPO_PUBLIC_FIREBASE_APP_ID',
-    'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN',
-    'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
-  ] as const;
-  for (const key of required) {
-    if (!process.env[key]) {
+  const requiredEnvVars: Record<string, string | undefined> = {
+    EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+    EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  };
+
+  for (const [key, value] of Object.entries(requiredEnvVars)) {
+    if (!value) {
       throw new Error(`[Config] Missing required env var: ${key}. Set it in your .env file.`);
     }
   }
+
   const apiUrl = process.env.EXPO_PUBLIC_API_URL || '';
   const isLocalHost = apiUrl.includes('localhost') || apiUrl.includes('10.0.2.2') || apiUrl.includes('127.0.0.1');
   const isSsrExport = typeof window === 'undefined' && process.env.NODE_ENV === 'production';
