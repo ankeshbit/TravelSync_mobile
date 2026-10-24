@@ -21,6 +21,20 @@ describe('validateTripForm', () => {
     currency: 'EUR',
   };
 
+  it('allows past dates for logging past or completed trips', () => {
+    const pastTrip = {
+      name: 'Past Europe Vacation',
+      destination: 'Rome, Italy',
+      startDate: '2023-05-10',
+      endDate: '2023-05-20',
+      budget: '3000',
+      currency: 'EUR',
+    };
+    const res = validateTripForm(pastTrip);
+    expect(res.valid).toBe(true);
+    expect(res.errors).toEqual([]);
+  });
+
   it('passes valid form', () => expect(validateTripForm(valid).valid).toBe(true));
   it('fails missing name', () => expect(validateTripForm({ ...valid, name: '' }).valid).toBe(false));
   it('fails end before start', () => {
