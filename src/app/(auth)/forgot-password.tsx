@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/api/client';
 import React, { useState } from 'react';
 import {
   View,
@@ -36,11 +37,14 @@ export default function ForgotPasswordScreen() {
       setLoading(true);
       await sendPasswordResetEmail(auth, trimmed);
       setSubmitted(true);
-    } catch (err: any) {
-      const msg = err.code === 'auth/user-not-found'
-        ? 'No account found with this email address.'
-        : err.message || 'Failed to send password reset email. Please try again.';
-      setError(msg);
+    } catch (err: unknown) {
+      // Non-enumerating messaging: if user not found, still treat as submitted
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/user-not-found') {
+        setSubmitted(true);
+      } else {
+        setError(getErrorMessage(err) || 'Failed to send password reset email. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

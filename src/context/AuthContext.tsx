@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { isAxiosError } from 'axios';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 import {
   User as FirebaseUser,
@@ -44,6 +46,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Platform-safe native Google OAuth hook
   const { isConfigured, isReady, promptGoogleAsync } = useNativeGoogleAuth();
 
+  const queryClient = useQueryClient();
+  const prevUidRef = useRef<string | null>(null);
+  const isRegisteringRef = useRef(false);
   const clearError = useCallback(() => setError(null), []);
 
   const syncBackendUser = useCallback(async (): Promise<User | null> => {
@@ -56,8 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const dbUser = await getCurrentUser();
       setUser(dbUser);
       return dbUser;
-    } catch (err: any) {
-      if (err?.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
+    } catch (err: unknown) {
+      const axiosErr = isAxiosError(err) ? err : null;
+      const respData = axiosErr?.response?.data as { code?: string } | undefined;
+      if (respData?.code === 'EMAIL_NOT_VERIFIED') {
         setError('Please verify your email address to access your trips.');
       } else {
         console.warn('[AuthContext] Backend sync warning:', getErrorMessage(err));
@@ -67,20 +74,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser: FirebaseUser | null) => {
+      const currentUid = fbUser?.uid || null;
+      if (prevUidRef.current !== null && prevUidRef.current !== currentUid) {
+        queryClient.clear();
+      }
+      prevUidRef.current = currentUid;
+
       setFirebaseUser(fbUser);
 
-      if (fbUser) {
-        await syncBackendUser();
-      } else {
+      if (!fbUser) {
         setUser(null);
+        queryClient.clear();
       }
 
       setIsInitializing(false);
+
+      if (fbUser && !isRegisteringRef.current) {
+        syncBackendUser().catch((err) => {
+          console.warn('[AuthContext] syncBackendUser non-blocking sync error:', err);
+        });
+      }
     });
 
     return () => unsubscribe();
-  }, [syncBackendUser]);
+  }, [syncBackendUser, queryClient]);
 
   const loginWithEmail = async (email: string, pass: string) => {
     setIsLoading(true);
@@ -89,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
       setFirebaseUser(cred.user);
       await syncBackendUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const friendlyMessage = getFirebaseErrorMessage(err);
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
@@ -173,12 +191,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await syncBackendUser();
 
       return userCredential.user;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const fbErr = err as { code?: string; message?: string } | undefined;
       if (
-        err?.code === 'auth/popup-closed-by-user' ||
-        err?.code === 'auth/cancelled-popup-request' ||
-        err?.message?.toLowerCase().includes('cancel') ||
-        err?.message?.toLowerCase().includes('dismiss')
+        fbErr?.code === 'auth/popup-closed-by-user' ||
+        fbErr?.code === 'auth/cancelled-popup-request' ||
+        fbErr?.message?.toLowerCase().includes('cancel') ||
+        fbErr?.message?.toLowerCase().includes('dismiss')
       ) {
         return null; // User cancelled, no error banner needed
       }
@@ -194,9 +213,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registerWithEmail = async (name: string, email: string, pass: string) => {
     setIsLoading(true);
     setError(null);
+    isRegisteringRef.current = true;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
       await updateFirebaseProfile(cred.user, { displayName: name.trim() });
+      await cred.user.reload();
+      await cred.user.getIdToken(true);
       try {
         await sendEmailVerification(cred.user);
       } catch {
@@ -204,11 +226,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setFirebaseUser(cred.user);
       await syncBackendUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const friendlyMessage = getFirebaseErrorMessage(err);
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
     } finally {
+      isRegisteringRef.current = false;
       setIsLoading(false);
     }
   };
@@ -216,13 +239,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
-      // Best-effort non-blocking backend session cleanup
-      logoutBackend().catch(() => {});
+      // Await backend logout with ~2s timeout BEFORE firebaseSignOut so token is still valid
+      try {
+        await Promise.race([
+          logoutBackend(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+        ]);
+      } catch {
+        // Ignore backend logout network failures or timeouts
+      }
+
       await firebaseSignOut(auth);
       setFirebaseUser(null);
       setUser(null);
       setError(null);
-    } catch (err: any) {
+      queryClient.clear();
+    } catch (err: unknown) {
       setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
@@ -281,7 +313,7 @@ function getFirebaseErrorMessage(error: any): string {
     case 'auth/popup-closed-by-user':
       return 'Sign-in window was closed. Please try again.';
     case 'auth/argument-error':
-      return 'Authentication configuration error: signInWithPopup is not supported in native React Native. Google OAuth credentials are required.';
+      return 'Invalid argument provided to authentication. Please check your inputs and credentials.';
     case 'auth/unauthorized-domain':
       return 'This domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).';
     default:

@@ -1,3 +1,4 @@
+import * as Network from 'expo-network';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -7,6 +8,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +31,36 @@ export default function DashboardScreen() {
   const { user, firebaseUser, isInitializing } = useAuth();
   const [aiChatVisible, setAiChatVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('Upcoming');
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkNetwork = async () => {
+      try {
+        const netState = await Network.getNetworkStateAsync();
+        if (mounted) {
+          setIsOffline(Boolean(netState.isConnected === false || netState.isInternetReachable === false));
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    };
+    checkNetwork();
+    const interval = setInterval(checkNetwork, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const {
     data: tripsData,
@@ -38,7 +69,10 @@ export default function DashboardScreen() {
     error: tripsErr,
     refetch: refetchTrips,
     isRefetching,
-  } = useTrips();
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useTrips(debouncedSearch);
 
   const {
     data: summary,
@@ -58,8 +92,9 @@ export default function DashboardScreen() {
     await Promise.all([refetchTrips(), refetchSummary()]);
   };
 
-  const rawTrips = tripsData?.trips;
-  const trips = useMemo(() => rawTrips || [], [rawTrips]);
+  const trips = useMemo(() => {
+    return tripsData?.pages.flatMap((page) => page?.trips || []) || [];
+  }, [tripsData]);
   const displayName = user?.name || firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Traveler';
 
   // Filtered trips list matching website DashboardView.vue
@@ -111,19 +146,48 @@ export default function DashboardScreen() {
     return (
       <View style={styles.headerContainer}>
         {/* User Greeting & CTA */}
+        {/* Offline Connectivity Banner */}
+        {isOffline ? (
+          <TouchableOpacity
+            style={styles.offlineBanner}
+            onPress={() => router.push('/trip/offline')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="cloud-offline-outline" size={20} color={Theme.colors.status.warning} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.offlineBannerTitle}>You are currently offline</Text>
+              <Text style={styles.offlineBannerSubtitle}>Access your saved offline trip packs</Text>
+            </View>
+            <View style={styles.offlineBannerBtn}>
+              <Text style={styles.offlineBannerBtnText}>View</Text>
+              <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
         <View style={styles.topRow}>
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>{displayName}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => router.push('/trip/create')}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={18} color={Theme.colors.accentText} />
-            <Text style={styles.createButtonText}>New Trip</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TouchableOpacity
+              style={styles.savedOfflineHeaderBtn}
+              onPress={() => router.push('/trip/offline')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cloud-offline-outline" size={15} color={Theme.colors.accent} />
+              <Text style={styles.savedOfflineHeaderBtnText}>Saved Offline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => router.push('/trip/create')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={18} color={Theme.colors.accentText} />
+              <Text style={styles.createButtonText}>New Trip</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Overview Stat Cards */}
@@ -213,12 +277,24 @@ export default function DashboardScreen() {
 
   if (tripsError && trips.length === 0) {
     return (
-      <ErrorState
-        title="Failed to Load Trips"
-        message={getErrorMessage(tripsErr)}
-        onRetry={onRefresh}
-        fullscreen
-      />
+      <View style={styles.errorScreenWrapper}>
+        <ErrorState
+          title="Failed to Load Trips"
+          message={getErrorMessage(tripsErr)}
+          onRetry={onRefresh}
+        />
+        <View style={styles.offlineEntryContainer}>
+          <Text style={styles.offlineEntryText}>Looking for trips saved on this device?</Text>
+          <TouchableOpacity
+            style={styles.savedOfflineButton}
+            onPress={() => router.push('/trip/offline')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="cloud-offline-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.savedOfflineButtonText}>Saved Offline Trips</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   }
 
@@ -233,6 +309,19 @@ export default function DashboardScreen() {
             onPress={() => router.push({ pathname: '/trip/[id]', params: { id: item.id } })}
           />
         )}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Theme.colors.accent} />
+            </View>
+          ) : undefined
+        }
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={
           searchQuery ? (
@@ -292,6 +381,104 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  errorScreenWrapper: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  offlineEntryContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+    width: '100%',
+  },
+  offlineEntryText: {
+    fontSize: 13,
+    color: Theme.colors.textMuted,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  savedOfflineButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  savedOfflineButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  offlineBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.colors.status.warning,
+  },
+  offlineBannerSubtitle: {
+    fontSize: 11,
+    color: Theme.colors.textMuted,
+  },
+  offlineBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Theme.colors.status.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  offlineBannerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  savedOfflineHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  savedOfflineHeaderBtnText: {
+    color: Theme.colors.accent,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  footerOfflineEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    marginTop: 8,
+  },
+  footerOfflineEntryText: {
+    fontSize: 13,
+    color: Theme.colors.textMuted,
+    fontWeight: '500',
+  },
   container: {
     flex: 1,
     backgroundColor: Theme.colors.background,

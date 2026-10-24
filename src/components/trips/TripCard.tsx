@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Trip, TripStatus } from '@/types/trip';
+import { formatDateRange } from '@/utils/dateUtils';
+import { getTripMemberCount } from '@/utils/tripMembers';
 import { Theme } from '@/constants/theme';
 
 interface TripCardProps {
@@ -11,19 +13,10 @@ interface TripCardProps {
 }
 
 export function TripCard({ trip, onPress }: TripCardProps) {
-  const membersCount = 1 + (trip.members ? trip.members.length : 0);
+  const membersCount = getTripMemberCount(trip.members, trip.ownerId);
   const placesCount = trip.places ? trip.places.length : 0;
 
-  const formatDateRange = (start?: string, end?: string) => {
-    if (!start) return '';
-    try {
-      const s = new Date(start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const e = end ? new Date(end).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      return `${s} - ${e}`;
-    } catch {
-      return `${start} - ${end || ''}`;
-    }
-  };
+
 
   const statusColor = getStatusColor(trip.status);
 
@@ -47,7 +40,7 @@ export function TripCard({ trip, onPress }: TripCardProps) {
           <Text style={styles.destination} numberOfLines={1}>{trip.destination}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
             <Text style={[styles.statusText, { color: statusColor.text }]}>
-              {trip.status.toUpperCase()}
+              {(trip.status ? trip.status.toUpperCase() : 'PLANNING')}
             </Text>
           </View>
         </View>
@@ -60,20 +53,24 @@ export function TripCard({ trip, onPress }: TripCardProps) {
         </View>
 
         <View style={styles.footer}>
-          <View style={styles.badge}>
-            <Ionicons name="people-outline" size={13} color={Theme.colors.accent} />
-            <Text style={styles.badgeText}>{membersCount} {membersCount === 1 ? 'member' : 'members'}</Text>
-          </View>
+          {Array.isArray(trip.members) ? (
+            <View style={styles.badge}>
+              <Ionicons name="people-outline" size={13} color={Theme.colors.accent} />
+              <Text style={styles.badgeText}>{membersCount} {membersCount === 1 ? 'member' : 'members'}</Text>
+            </View>
+          ) : null}
 
-          <View style={styles.badge}>
-            <Ionicons name="location-outline" size={13} color={Theme.colors.status.success} />
-            <Text style={styles.badgeText}>{placesCount} {placesCount === 1 ? 'stop' : 'stops'}</Text>
-          </View>
+          {Array.isArray(trip.places) ? (
+            <View style={styles.badge}>
+              <Ionicons name="location-outline" size={13} color={Theme.colors.status.success} />
+              <Text style={styles.badgeText}>{placesCount} {placesCount === 1 ? 'stop' : 'stops'}</Text>
+            </View>
+          ) : null}
 
-          {trip.budgetPerPerson > 0 ? (
+          {typeof trip.budgetPerPerson === 'number' && trip.budgetPerPerson > 0 ? (
             <View style={styles.badge}>
               <Ionicons name="cash-outline" size={13} color={Theme.colors.status.warning} />
-              <Text style={styles.badgeText}>{trip.currency} {trip.budgetPerPerson}</Text>
+              <Text style={styles.badgeText}>{trip.currency} {Number(trip.budgetPerPerson).toLocaleString()}</Text>
             </View>
           ) : null}
         </View>

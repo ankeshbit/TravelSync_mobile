@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -6,11 +7,10 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
-  Modal,
-  Platform,
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,11 +19,13 @@ import { auth } from '@/config/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { getApiBaseUrl } from '@/config/env';
 import { Button } from '@/components/common/Button';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Card } from '@/components/common/Card';
 import { Input } from '@/components/common/Input';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 import { updateProfile, uploadProfilePhoto, sendDeleteOtp, deleteAccount } from '@/api/auth';
+import { getErrorMessage } from '@/api/client';
 
 type SettingsTab = 'profile' | 'security' | 'preferences' | 'notifications' | 'account';
 
@@ -39,9 +41,16 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD', 'CAD'];
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, firebaseUser, logout, syncBackendUser, isLoading } = useAuth();
+  const { user, firebaseUser, logout, syncBackendUser, isLoading, clearError } = useAuth();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+
+  // Clear auth errors and re-sync local state when user changes
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
+
+
 
   // Profile edit state
   const [name, setName] = useState(user?.name || firebaseUser?.displayName || '');
@@ -49,17 +58,56 @@ export default function ProfileScreen() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(user?.picture || null);
 
-  // Preferences & Notifications State
+  const [syncedUserId, setSyncedUserId] = useState<string | null>(null);
+  if (user?.id && user.id !== syncedUserId) {
+    setSyncedUserId(user.id);
+    setName(user.name || firebaseUser?.displayName || '');
+    setProfilePicture(user.picture || null);
+  }
+
+  // Preferences & Notifications State (persisted per uid)
   const [preferredCurrency, setPreferredCurrency] = useState('USD');
   const [notifyTripUpdates, setNotifyTripUpdates] = useState(true);
   const [notifyExpenseAlerts, setNotifyExpenseAlerts] = useState(true);
   const [notifyLiveActivity, setNotifyLiveActivity] = useState(true);
+
+  const prefsKey = firebaseUser?.uid ? `user_prefs_${firebaseUser.uid}` : null;
+
+  useEffect(() => {
+    if (!prefsKey) return;
+    AsyncStorage.getItem(prefsKey).then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.preferredCurrency) setPreferredCurrency(parsed.preferredCurrency);
+          if (parsed.notifyTripUpdates !== undefined) setNotifyTripUpdates(parsed.notifyTripUpdates);
+          if (parsed.notifyExpenseAlerts !== undefined) setNotifyExpenseAlerts(parsed.notifyExpenseAlerts);
+          if (parsed.notifyLiveActivity !== undefined) setNotifyLiveActivity(parsed.notifyLiveActivity);
+        } catch {}
+      }
+    });
+  }, [prefsKey]);
+
+  const updatePreference = (key: string, val: any) => {
+    if (!prefsKey) return;
+    AsyncStorage.getItem(prefsKey).then((saved) => {
+      const current = saved ? JSON.parse(saved) : {};
+      current[key] = val;
+      AsyncStorage.setItem(prefsKey, JSON.stringify(current)).catch(() => {});
+    });
+  };
 
   // OTP Modal state for account deletion
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
+
+  const closeDeleteModal = () => {
+    setDeleteModalVisible(false);
+    setOtpCode('');
+    setDevOtp(null);
+  };
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Password reset
@@ -87,8 +135,8 @@ export default function ProfileScreen() {
       await updateProfile({ name: name.trim() });
       await syncBackendUser();
       Alert.alert('Success', 'Profile name updated successfully.');
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update profile name.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to update profile name.');
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -103,7 +151,7 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -119,12 +167,13 @@ export default function ProfileScreen() {
       const formData = new FormData();
       const filename = asset.uri.split('/').pop() || 'profile.jpg';
       const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : 'image/jpeg';
+      const ext = match ? match[1].toLowerCase() : 'jpg';
+      const mimeType = asset.mimeType || (ext === 'jpg' ? 'image/jpeg' : `image/${ext}`);
 
       formData.append('photo', {
-        uri: Platform.OS === 'ios' ? asset.uri.replace('file://', '') : asset.uri,
+        uri: asset.uri, // keep file:// on both platforms
         name: filename,
-        type,
+        type: mimeType,
       } as any);
 
       const res = await uploadProfilePhoto(formData);
@@ -133,8 +182,8 @@ export default function ProfileScreen() {
       }
       await syncBackendUser();
       Alert.alert('Success', 'Profile photo updated successfully!');
-    } catch (err: any) {
-      Alert.alert('Upload Error', err?.response?.data?.message || 'Failed to upload profile photo.');
+    } catch (err: unknown) {
+      Alert.alert('Upload Error', getErrorMessage(err));
     } finally {
       setIsUploadingPhoto(false);
     }
@@ -151,8 +200,8 @@ export default function ProfileScreen() {
       setIsSendingReset(true);
       await sendPasswordResetEmail(auth, email);
       Alert.alert('Reset Link Sent', `Password reset instructions sent to ${email}`);
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to send password reset email.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to send password reset email.');
     } finally {
       setIsSendingReset(false);
     }
@@ -177,12 +226,14 @@ export default function ProfileScreen() {
             try {
               setIsSendingOtp(true);
               const res = await sendDeleteOtp(email);
-              if (res?.devOtp) {
+              if (__DEV__ && res?.devOtp) {
                 setDevOtp(res.devOtp);
+              } else {
+                setDevOtp(null);
               }
               setDeleteModalVisible(true);
-            } catch (err: any) {
-              Alert.alert('Error', err?.response?.data?.message || 'Failed to send OTP verification code.');
+            } catch (err: unknown) {
+              Alert.alert('Error', getErrorMessage(err) || 'Failed to send OTP verification code.');
             } finally {
               setIsSendingOtp(false);
             }
@@ -193,28 +244,30 @@ export default function ProfileScreen() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!otpCode.trim()) {
-      Alert.alert('Required', 'Please enter the 6-digit verification code.');
+    if (!/^\d{6}$/.test(otpCode.trim())) {
+      Alert.alert('Invalid Code', 'Please enter a valid 6-digit numeric verification code.');
       return;
     }
 
     try {
       setIsDeleting(true);
       await deleteAccount(otpCode.trim());
-      setDeleteModalVisible(false);
+      closeDeleteModal();
       await logout();
       Alert.alert('Account Deleted', 'Your TravelSync account has been permanently removed.');
       router.replace('/(auth)/login');
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 409 Conflict: user owns shared trips
-      if (err?.response?.status === 409 || err?.response?.data?.code === 'OWNS_SHARED_TRIPS') {
-        const tripNames = err.response.data?.trips?.join(', ') || 'one or more shared trips';
+      const axiosErr = isAxiosError(err) ? err : null;
+      const respData = axiosErr?.response?.data as { code?: string; trips?: string[]; message?: string } | undefined;
+      if (axiosErr?.response?.status === 409 || respData?.code === 'OWNS_SHARED_TRIPS') {
+        const tripNames = respData?.trips?.join(', ') || 'one or more shared trips';
         Alert.alert(
           'Cannot Delete Account',
           `You are the owner of shared trips (${tripNames}). Please delete these trips or transfer ownership to another member before deleting your account.`
         );
       } else {
-        Alert.alert('Deletion Failed', err?.response?.data?.message || 'Invalid or expired OTP code.');
+        Alert.alert('Deletion Failed', getErrorMessage(err) || 'Invalid or expired OTP code.');
       }
     } finally {
       setIsDeleting(false);
@@ -307,7 +360,7 @@ export default function ProfileScreen() {
               color={isDbSynced ? Theme.colors.status.success : Theme.colors.status.warning}
             />
             <Text style={[styles.badgeText, isDbSynced ? styles.textSuccess : styles.textWarning]}>
-              {isDbSynced ? 'PostgreSQL Synced' : 'Sync Pending'}
+              {isDbSynced ? 'Synced' : 'Sync Pending'}
             </Text>
           </View>
         </View>
@@ -346,7 +399,7 @@ export default function ProfileScreen() {
             <Card style={styles.cardSection}>
               <Input
                 label="Full Name"
-                placeholder="e.g. Rajnish Srivastava"
+                placeholder="e.g. Jane Doe"
                 value={name}
                 onChangeText={setName}
                 leftIcon={<Ionicons name="person-outline" size={18} color={Theme.colors.textMuted} />}
@@ -454,7 +507,7 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         key={curr}
                         style={[styles.currencyPill, isSelected && styles.currencyPillActive]}
-                        onPress={() => setPreferredCurrency(curr)}
+                        onPress={() => { setPreferredCurrency(curr); updatePreference('preferredCurrency', curr); }}
                       >
                         <Text style={[styles.currencyPillText, isSelected && styles.currencyPillTextActive]}>
                           {curr}
@@ -480,7 +533,7 @@ export default function ProfileScreen() {
                 </View>
                 <Switch
                   value={notifyTripUpdates}
-                  onValueChange={setNotifyTripUpdates}
+                  onValueChange={(val) => { setNotifyTripUpdates(val); updatePreference('notifyTripUpdates', val); }}
                   trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
                   thumbColor="#FFFFFF"
                 />
@@ -495,7 +548,7 @@ export default function ProfileScreen() {
                 </View>
                 <Switch
                   value={notifyExpenseAlerts}
-                  onValueChange={setNotifyExpenseAlerts}
+                  onValueChange={(val) => { setNotifyExpenseAlerts(val); updatePreference('notifyExpenseAlerts', val); }}
                   trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
                   thumbColor="#FFFFFF"
                 />
@@ -510,7 +563,7 @@ export default function ProfileScreen() {
                 </View>
                 <Switch
                   value={notifyLiveActivity}
-                  onValueChange={setNotifyLiveActivity}
+                  onValueChange={(val) => { setNotifyLiveActivity(val); updatePreference('notifyLiveActivity', val); }}
                   trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
                   thumbColor="#FFFFFF"
                 />
@@ -586,56 +639,43 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Delete OTP Verification Modal */}
-      <Modal visible={deleteModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="warning-outline" size={22} color={Theme.colors.status.error} />
-                <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
-              </View>
-              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              Please enter the 6-digit verification code sent to <Text style={{ color: Theme.colors.accent }}>{email}</Text>.
-            </Text>
-
-            {devOtp && (
-              <View style={styles.devOtpBanner}>
-                <Text style={styles.devOtpTitle}>DEV OTP Code (Development Server):</Text>
-                <Text style={styles.devOtpCode}>{devOtp}</Text>
-              </View>
-            )}
-
-            <Input
-              label="6-Digit OTP Code"
-              placeholder="e.g. 123456"
-              value={otpCode}
-              onChangeText={setOtpCode}
-              keyboardType="number-pad"
-              maxLength={6}
-              leftIcon={<Ionicons name="key-outline" size={18} color={Theme.colors.textMuted} />}
-            />
-
-            <View style={{ gap: 10, marginTop: 8 }}>
-              <Button
-                title="Permanently Delete My Account"
-                variant="danger"
-                onPress={handleConfirmDelete}
-                isLoading={isDeleting}
-              />
-              <Button
-                title="Cancel"
-                variant="outline"
-                onPress={() => setDeleteModalVisible(false)}
-              />
-            </View>
+      <BottomSheetModal
+        visible={deleteModalVisible}
+        onClose={closeDeleteModal}
+        title="Confirm Account Deletion"
+        subtitle={`Please enter the 6-digit verification code sent to ${email}`}
+      >
+        {__DEV__ && devOtp ? (
+          <View style={styles.devOtpBanner}>
+            <Text style={styles.devOtpTitle}>DEV OTP Code (Development Server):</Text>
+            <Text style={styles.devOtpCode}>{devOtp}</Text>
           </View>
+        ) : null}
+
+        <Input
+          label="6-Digit OTP Code"
+          placeholder="e.g. 123456"
+          value={otpCode}
+          onChangeText={setOtpCode}
+          keyboardType="number-pad"
+          maxLength={6}
+          leftIcon={<Ionicons name="key-outline" size={18} color={Theme.colors.textMuted} />}
+        />
+
+        <View style={{ gap: 10, marginTop: 8 }}>
+          <Button
+            title="Permanently Delete My Account"
+            variant="danger"
+            onPress={handleConfirmDelete}
+            isLoading={isDeleting}
+          />
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={closeDeleteModal}
+          />
         </View>
-      </Modal>
+      </BottomSheetModal>
     </View>
   );
 }

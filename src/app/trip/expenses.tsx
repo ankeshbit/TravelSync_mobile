@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Alert,
   RefreshControl,
 } from 'react-native';
@@ -20,6 +19,8 @@ import {
   useTripMembers,
 } from '@/hooks/useTripDetails';
 import { useAuth } from '@/context/AuthContext';
+import { filterTripMembers } from '@/utils/tripMembers';
+import { getErrorMessage } from '@/api/client';
 import { useTripSocket } from '@/hooks/useTripSocket';
 import { TripPresence } from '@/components/trips/TripPresence';
 import { LoadingState } from '@/components/common/LoadingState';
@@ -28,8 +29,10 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Theme } from '@/constants/theme';
-import { Expense } from '@/types/trip';
+import { TripMember, Expense } from '@/types/trip';
+import { parseAmount, filterSettlementsForCurrency } from '@/utils/money';
 
 const EXPENSE_CATEGORIES = [
   { id: 'food', label: 'Food & Dining', icon: 'restaurant-outline' },
@@ -49,23 +52,15 @@ export default function TripExpensesScreen() {
   const {
     data: expenses = [],
     isLoading: expensesLoading,
+    isError: expensesError,
     refetch: refetchExpenses,
     isRefetching,
   } = useTripExpenses(tripId);
   const { data: balances, refetch: refetchBalances } = useTripBalances(tripId);
   const { data: members = [] } = useTripMembers(tripId);
 
-  // Real-time socket presence & updates
-  const { activeMembers } = useTripSocket(tripId, {
-    onExpenseAdded: () => {
-      refetchExpenses();
-      refetchBalances();
-    },
-    onExpenseDeleted: () => {
-      refetchExpenses();
-      refetchBalances();
-    },
-  });
+  // Real-time socket presence & updates (automatic TanStack Query invalidation)
+  const { activeMembers } = useTripSocket(tripId);
 
   const addExpenseMutation = useAddTripExpense(tripId);
   const deleteExpenseMutation = useDeleteTripExpense(tripId);
@@ -74,15 +69,22 @@ export default function TripExpensesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [settleModalVisible, setSettleModalVisible] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('');
+  const [modalCurrency, setModalCurrency] = useState<string>('');
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('food');
   const [selectedSplits, setSelectedSplits] = useState<string[]>([]);
   const [paidById, setPaidById] = useState<string>('');
 
+  const nonOwnerMembers = filterTripMembers(members, trip?.ownerId || trip?.owner?.id);
   const allMembers = [
     ...(trip?.owner ? [{ id: trip.owner.id, name: trip.owner.name, email: trip.owner.email, isOwner: true }] : []),
-    ...members.map((m) => ({ id: m.userId, name: m.user?.name || 'Member', email: m.user?.email || '', isOwner: false })),
+    ...nonOwnerMembers.map((m: TripMember) => ({
+      id: m.userId || m.id,
+      name: m.user?.name || 'Member',
+      email: m.user?.email || '',
+      isOwner: false,
+    })),
   ];
 
   // Available Currencies
@@ -119,6 +121,13 @@ export default function TripExpensesScreen() {
   })();
 
   const computedYourShare = (() => {
+    // Prefer server-provided per-member share from balances
+    if (currentCurrencyData?.membersWithBalance && user?.id) {
+      const myBalance = currentCurrencyData.membersWithBalance.find(
+        (m: any) => m.id === user.id || m._id === user.id
+      );
+      if (myBalance?.share !== undefined) return Number(myBalance.share) || 0;
+    }
     if (!user?.id || !currentCurrencyExpenses.length) return 0;
     return currentCurrencyExpenses.reduce((sum, item) => {
       const splits = item.splits && item.splits.length > 0 ? item.splits : [];
@@ -133,9 +142,8 @@ export default function TripExpensesScreen() {
 
   // Settlements
   const settlements: any[] = (() => {
-    if (currentCurrencyData?.settlements) return currentCurrencyData.settlements;
-    if (balances?.settlements) return balances.settlements;
-    return [];
+    const raw: any[] = currentCurrencyData?.settlements || balances?.settlements || [];
+    return filterSettlementsForCurrency(raw, activeCurrency);
   })();
 
   const computedYouOwe = (() => {
@@ -178,13 +186,13 @@ export default function TripExpensesScreen() {
   };
 
   const handleAddExpense = async () => {
-    const numAmount = parseFloat(amount);
+    const numAmount = parseAmount(amount);
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter an expense title.');
       return;
     }
-    if (isNaN(numAmount) || numAmount <= 0) {
-      Alert.alert('Required', 'Please enter a valid amount.');
+    if (numAmount === null || numAmount <= 0) {
+      Alert.alert('Required', 'Please enter a valid amount (e.g. 12.50 or 12,50).');
       return;
     }
     if (!paidById) {
@@ -193,18 +201,19 @@ export default function TripExpensesScreen() {
     }
 
     try {
+      const finalCurrency = (modalCurrency || activeCurrency).toUpperCase().trim();
       await addExpenseMutation.mutateAsync({
         title: title.trim(),
         amount: numAmount,
-        currency: activeCurrency,
+        currency: finalCurrency,
         category,
         paidById,
         splitUserIds: selectedSplits,
       });
 
       setModalVisible(false);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add expense.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -214,7 +223,11 @@ export default function TripExpensesScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deleteExpenseMutation.mutate(exp.id),
+        onPress: () =>
+          deleteExpenseMutation.mutate(exp.id, {
+            onError: (err: unknown) =>
+              Alert.alert('Error', getErrorMessage(err)),
+          }),
       },
     ]);
   };
@@ -227,10 +240,12 @@ export default function TripExpensesScreen() {
     return <ErrorState title="Trip Not Found" message="Could not load expenses for this trip." onRetry={onRefresh} fullscreen />;
   }
 
-  // Category breakdown
+  // Category breakdown – unknown categories go under "other"
   const categoryTotals: Record<string, number> = {};
+  const knownCatIds = new Set(EXPENSE_CATEGORIES.map((c) => c.id));
   currentCurrencyExpenses.forEach((e) => {
-    const cat = (e.category || 'other').toLowerCase();
+    const raw = (e.category || 'other').toLowerCase();
+    const cat = knownCatIds.has(raw) ? raw : 'other';
     categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(e.amount);
   });
 
@@ -404,7 +419,7 @@ export default function TripExpensesScreen() {
                   </View>
 
                   <Text style={styles.settlementAmount}>
-                    {activeCurrency} {Number(s.amount).toFixed(2)}
+                    {s.currency || activeCurrency} {Number(s.amount).toFixed(2)}
                   </Text>
                 </View>
               ))}
@@ -416,7 +431,13 @@ export default function TripExpensesScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeading}>All Transactions ({currentCurrencyExpenses.length})</Text>
 
-          {currentCurrencyExpenses.length === 0 ? (
+          {expensesError ? (
+            <ErrorState
+              title="Failed to Load Expenses"
+              message="Could not fetch transactions for this trip."
+              onRetry={refetchExpenses}
+            />
+          ) : currentCurrencyExpenses.length === 0 ? (
             <EmptyState
               icon="wallet-outline"
               title="No Expenses Logged"
@@ -465,31 +486,56 @@ export default function TripExpensesScreen() {
       </ScrollView>
 
       {/* Add Expense Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Expense</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+      <BottomSheetModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title="Add Expense"
+      >
+        <Input
+          label="Expense Title"
+          placeholder="e.g. Dinner in Shibuya"
+          value={title}
+          onChangeText={setTitle}
+        />
 
-            <ScrollView>
-              <Input
-                label="Expense Title"
-                placeholder="e.g. Dinner in Shibuya"
-                value={title}
-                onChangeText={setTitle}
-              />
+        {/* Currency Selection Picker */}
+        <Text style={styles.fieldLabel}>Currency</Text>
+        <View style={styles.categoryPickerRow}>
+          {availableCurrencies.map((c) => (
+            <TouchableOpacity
+              key={c}
+              style={[
+                styles.categoryPickerChip,
+                (modalCurrency || activeCurrency) === c && styles.categoryPickerChipActive,
+              ]}
+              onPress={() => setModalCurrency(c)}
+            >
+              <Text
+                style={[
+                  styles.categoryPickerText,
+                  (modalCurrency || activeCurrency) === c && styles.categoryPickerTextActive,
+                ]}
+              >
+                {c}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Input
+          placeholder="Custom currency (e.g. JPY, EUR)"
+          value={modalCurrency}
+          onChangeText={(txt) => setModalCurrency(txt.toUpperCase().slice(0, 3))}
+          autoCapitalize="characters"
+          maxLength={3}
+        />
 
-              <Input
-                label={`Amount (${trip.currency})`}
-                placeholder="0.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="numeric"
-              />
+        <Input
+          label={`Amount (${(modalCurrency || activeCurrency).toUpperCase()})`}
+          placeholder="0.00"
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="numeric"
+        />
 
               {/* Category Picker */}
               <Text style={styles.fieldLabel}>Category</Text>
@@ -572,82 +618,68 @@ export default function TripExpensesScreen() {
                 isLoading={addExpenseMutation.isPending}
                 style={{ marginTop: 20 }}
               />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* Settle Up Modal */}
-      <Modal visible={settleModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Settlement Plan</Text>
-                <Text style={styles.modalSubtitle}>Optimized debts for {activeCurrency}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setSettleModalVisible(false)}>
-                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 380 }}>
-              {settlements.length === 0 ? (
-                <View style={styles.emptySettlementBox}>
-                  <Ionicons name="checkmark-circle-outline" size={36} color={Theme.colors.status.success} />
-                  <Text style={styles.emptySettlementText}>All settled up! No outstanding balances.</Text>
-                </View>
-              ) : (
-                settlements.map((s, idx) => {
-                  const isUserSender = user?.id && s.from === user.id;
-                  const isUserReceiver = user?.id && s.to === user.id;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.settleModalRow,
-                        isUserSender && styles.settleModalRowUserSender,
-                        isUserReceiver && styles.settleModalRowUserReceiver,
-                      ]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.settleRowTitle}>
-                          {isUserSender ? 'You' : s.fromName || 'Someone'}
-                          {' → '}
-                          {isUserReceiver ? 'You' : s.toName || 'Someone'}
-                        </Text>
-                        <Text style={styles.settleRowSubtitle}>
-                          {isUserSender
-                            ? 'You owe this amount'
-                            : isUserReceiver
-                            ? 'You receive this amount'
-                            : 'Peer settlement'}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.settleRowAmount,
-                          isUserSender && { color: Theme.colors.status.error },
-                          isUserReceiver && { color: Theme.colors.status.success },
-                        ]}
-                      >
-                        {activeCurrency} {Number(s.amount).toFixed(2)}
-                      </Text>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
-
-            <Button
-              title="Close"
-              variant="outline"
-              onPress={() => setSettleModalVisible(false)}
-              style={{ marginTop: 16 }}
-            />
+      <BottomSheetModal
+        visible={settleModalVisible}
+        onClose={() => setSettleModalVisible(false)}
+        title="Settlement Plan"
+        subtitle={`Optimized debts for ${activeCurrency}`}
+      >
+        {settlements.length === 0 ? (
+          <View style={styles.emptySettlementBox}>
+            <Ionicons name="checkmark-circle-outline" size={36} color={Theme.colors.status.success} />
+            <Text style={styles.emptySettlementText}>All settled up! No outstanding balances.</Text>
           </View>
-        </View>
-      </Modal>
+        ) : (
+          settlements.map((s, idx) => {
+            const isUserSender = user?.id && s.from === user.id;
+            const isUserReceiver = user?.id && s.to === user.id;
+            return (
+              <View
+                key={idx}
+                style={[
+                  styles.settleModalRow,
+                  isUserSender && styles.settleModalRowUserSender,
+                  isUserReceiver && styles.settleModalRowUserReceiver,
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settleRowTitle}>
+                    {isUserSender ? 'You' : s.fromName || 'Someone'}
+                    {' → '}
+                    {isUserReceiver ? 'You' : s.toName || 'Someone'}
+                  </Text>
+                  <Text style={styles.settleRowSubtitle}>
+                    {isUserSender
+                      ? 'You owe this amount'
+                      : isUserReceiver
+                      ? 'You receive this amount'
+                      : 'Peer settlement'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.settleRowAmount,
+                    isUserSender && { color: Theme.colors.status.error },
+                    isUserReceiver && { color: Theme.colors.status.success },
+                  ]}
+                >
+                  {s.currency || activeCurrency} {Number(s.amount).toFixed(2)}
+                </Text>
+              </View>
+            );
+          })
+        )}
+
+        <Button
+          title="Close"
+          variant="outline"
+          onPress={() => setSettleModalVisible(false)}
+          style={{ marginTop: 16 }}
+        />
+      </BottomSheetModal>
     </View>
   );
 }

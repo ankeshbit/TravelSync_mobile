@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/api/client';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -7,7 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { sendEmailVerification } from 'firebase/auth';
 import { auth } from '@/config/firebase';
@@ -18,11 +19,17 @@ import { Theme } from '@/constants/theme';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
-  const { firebaseUser, logout, syncBackendUser } = useAuth();
+  const { firebaseUser, logout, syncBackendUser, clearError } = useAuth();
+  const params = useLocalSearchParams<{ justSent?: string }>();
+
+  // Clear errors on mount
+  useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   const [checking, setChecking] = useState(false);
   const [sending, setSending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(60);
+  const [resendCooldown, setResendCooldown] = useState(params.justSent === 'true' ? 60 : 0);
   const cooldownRef = useRef<any>(null);
 
   const startCooldown = (seconds: number) => {
@@ -51,20 +58,37 @@ export default function VerifyEmailScreen() {
       return;
     }
 
-    cooldownRef.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current);
-          return 0;
+    if (resendCooldown > 0) {
+      cooldownRef.current = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(cooldownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    // Auto-poll verification status every 5 seconds
+    const pollInterval = setInterval(async () => {
+      try {
+        if (auth.currentUser) {
+          await auth.currentUser.reload();
+          if (auth.currentUser.emailVerified) {
+            await auth.currentUser.getIdToken(true);
+            await syncBackendUser();
+            router.replace('/(tabs)');
+          }
         }
-        return prev - 1;
-      });
-    }, 1000);
+      } catch {}
+    }, 5000);
 
     return () => {
       if (cooldownRef.current) clearInterval(cooldownRef.current);
+      clearInterval(pollInterval);
     };
-  }, [router]);
+  }, [router, syncBackendUser, resendCooldown]);
 
   const handleCheckVerification = async () => {
     if (!auth.currentUser) {
@@ -86,8 +110,8 @@ export default function VerifyEmailScreen() {
           'Please check your email inbox and tap the link to verify your account.'
         );
       }
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to check verification status.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to check verification status.');
     } finally {
       setChecking(false);
     }
@@ -101,8 +125,8 @@ export default function VerifyEmailScreen() {
       await sendEmailVerification(auth.currentUser);
       startCooldown(60);
       Alert.alert('Email Sent', 'A fresh verification link has been sent to your inbox.');
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to resend verification email.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to resend verification email.');
     } finally {
       setSending(false);
     }

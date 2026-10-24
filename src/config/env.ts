@@ -1,5 +1,30 @@
 import { Platform } from 'react-native';
 
+// In production, validate required env vars at startup using literal property access
+// so that Expo Metro bundler can statically inline EXPO_PUBLIC_* variables into release bundles.
+if (!__DEV__) {
+  const requiredEnvVars: Record<string, string | undefined> = {
+    EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+    EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  };
+
+  for (const [key, value] of Object.entries(requiredEnvVars)) {
+    if (!value) {
+      throw new Error(`[Config] Missing required env var: ${key}. Set it in your .env file.`);
+    }
+  }
+
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL || '';
+  const isLocalHost = apiUrl.includes('localhost') || apiUrl.includes('10.0.2.2') || apiUrl.includes('127.0.0.1');
+  const isSsrExport = typeof window === 'undefined' && process.env.NODE_ENV === 'production';
+  if (isLocalHost && !isSsrExport) {
+    throw new Error('[Config] EXPO_PUBLIC_API_URL cannot point to localhost or 10.0.2.2 in production builds.');
+  }
+}
+
 /**
  * Resolves the backend API URL.
  * In Android emulators, localhost maps to 10.0.2.2.
@@ -29,12 +54,12 @@ export const getSocketBaseUrl = (): string => {
 };
 
 export const FIREBASE_CONFIG = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyALzehITyb7-KJC7shQf_1kPPC1uaLuT-c',
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'travelsync-2509e.firebaseapp.com',
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'travelsync-2509e',
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'travelsync-2509e.firebasestorage.app',
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '698271050805',
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:698271050805:web:3649fdea2ae2bbf15e157c',
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || '',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '',
 };
 
 export const GOOGLE_AUTH_CONFIG = {

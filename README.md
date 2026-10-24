@@ -193,3 +193,58 @@ Travelsync-mobile/
 │       │   └── create.tsx    # Plan new trip modal
 │       └── index.tsx         # Redirect to /(tabs)
 ```
+
+---
+
+## 🗺️ Google Maps API Setup (iOS & Android)
+
+TravelSync Mobile features an interactive map planner using `react-native-maps` on native devices with a responsive fallback on Web.
+
+To enable native Google Maps:
+1. Obtain a Google Maps API Key from the [Google Cloud Console](https://console.cloud.google.com/google/maps-apis).
+2. Enable **Maps SDK for Android** and **Maps SDK for iOS**.
+3. Add your API key to your local `.env` file:
+   ```env
+   EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+   ```
+4. The key is automatically configured in `app.json` under:
+   - `expo.ios.config.googleMapsApiKey`
+   - `expo.android.config.googleMaps.apiKey`
+
+
+## Configuration & Environment Variables
+
+Create a `.env` file in the project root based on `.env.example`:
+
+```env
+# Backend API URL
+EXPO_PUBLIC_API_URL=http://localhost:3000/api # iOS simulator / Web
+# EXPO_PUBLIC_API_URL=http://10.0.2.2:3000/api # Android emulator
+
+# Firebase Client Configuration (Web & Mobile)
+EXPO_PUBLIC_FIREBASE_API_KEY=
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+EXPO_PUBLIC_FIREBASE_APP_ID=
+
+# Google OAuth Client IDs (For native mobile Google Sign-In)
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=
+EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
+
+# Google Maps API Keys (Native builds)
+EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY=
+EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY=
+```
+
+### Google Sign-In Setup
+- **iOS Bundle ID**: `com.travelsync.mobile`
+- **Android Package Name**: `com.travelsync.mobile`
+- **SHA-1 Fingerprint**: Add your debug and release keystore SHA-1 to Firebase Console (Project Settings > Your apps > Android app).
+
+### Google Maps API Keys
+- Native Android builds require a Google Maps Android API key configured in Google Cloud Console with the Maps SDK for Android enabled.
+- Native iOS builds require a Google Maps iOS API key configured with the Maps SDK for iOS enabled.
+- On Web, the app falls back gracefully to an interactive itinerary list view since react-native-maps does not support web rendering.

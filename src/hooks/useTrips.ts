@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useInfiniteQuery,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import {
   getTrips,
   getTripSummary,
@@ -8,33 +14,36 @@ import {
   getExploreDestinations,
 } from '@/api/trips';
 import { CreateTripDto, UpdateTripDto } from '@/types/trip';
+import { useIsAuthed } from './useIsAuthed';
 
-export const TRIP_KEYS = {
-  all: ['trips'] as const,
-  lists: () => [...TRIP_KEYS.all, 'list'] as const,
-  list: (page: number, limit: number) => [...TRIP_KEYS.lists(), { page, limit }] as const,
-  summary: () => [...TRIP_KEYS.all, 'summary'] as const,
-  detail: (id: string) => [...TRIP_KEYS.all, 'detail', id] as const,
-  members: (id: string) => [...TRIP_KEYS.all, 'members', id] as const,
-  places: (id: string) => [...TRIP_KEYS.all, 'places', id] as const,
-  expenses: (id: string) => [...TRIP_KEYS.all, 'expenses', id] as const,
-  balances: (id: string) => [...TRIP_KEYS.all, 'balances', id] as const,
-  activity: (id: string) => [...TRIP_KEYS.all, 'activity', id] as const,
-  explore: (q?: string) => ['explore', q || ''] as const,
-};
+import { TRIP_KEYS } from '@/constants/tripKeys';
+export { TRIP_KEYS };
 
-export function useTrips(page = 1, limit = 20) {
-  return useQuery({
-    queryKey: TRIP_KEYS.list(page, limit),
-    queryFn: () => getTrips(page, limit),
+export function useTrips(search?: string, limit = 20) {
+  const isAuthed = useIsAuthed();
+
+  return useInfiniteQuery({
+    queryKey: TRIP_KEYS.list(search),
+    queryFn: ({ pageParam = 1 }) => getTrips(pageParam as number, limit, search),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage?.pagination?.hasNextPage) {
+        return lastPage.pagination.page + 1;
+      }
+      return undefined;
+    },
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 }
 
 export function useTripSummary() {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.summary(),
     queryFn: () => getTripSummary(),
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -70,7 +79,12 @@ export function useDeleteTrip() {
 
   return useMutation({
     mutationFn: (id: string) => deleteTrip(id),
-    onSuccess: () => {
+    onSuccess: (_, tripId: string) => {
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.places(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.expenses(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.members(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.balances(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.lists() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
     },
@@ -78,9 +92,13 @@ export function useDeleteTrip() {
 }
 
 export function useExploreDestinations(query?: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.explore(query),
     queryFn: () => getExploreDestinations(query),
+    placeholderData: keepPreviousData,
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 5, // 5 minutes cache
   });
 }

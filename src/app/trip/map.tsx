@@ -5,12 +5,11 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Alert,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   useTrip,
@@ -27,9 +26,15 @@ import { LoadingState } from '@/components/common/LoadingState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
-import { BrandLogo } from '@/components/common/BrandLogo';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Theme } from '@/constants/theme';
+import { geocodePlace } from '@/utils/geocoding';
+import { calculateTripDays, parseCalendarDate } from '@/utils/dateUtils';
+import { getErrorMessage } from '@/api/client';
 import { Place, AiSuggestion } from '@/types/trip';
+
+
+import { TripMapView } from '@/components/trips/TripMapView';
 
 const CATEGORIES = [
   { id: 'attraction', label: 'Attraction', icon: 'map-outline' },
@@ -42,12 +47,13 @@ const CATEGORIES = [
 export default function TripMapScreen() {
   const { id, tripId: paramTripId } = useLocalSearchParams<{ id?: string; tripId?: string }>();
   const tripId = id || paramTripId || '';
-  const router = useRouter();
 
-  const { data: trip, isLoading: tripLoading } = useTrip(tripId);
+  const { data: trip, isLoading: tripLoading, isError: tripError, error: tripErrorObj, refetch: refetchTrip } = useTrip(tripId);
   const {
     data: places = [],
     isLoading: placesLoading,
+    isError: placesError,
+    error: placesErrorObj,
     refetch: refetchPlaces,
     isRefetching,
   } = useTripPlaces(tripId);
@@ -82,24 +88,18 @@ export default function TripMapScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
 
-  // Calculate days list based on trip start and end date
+  // Calculate days list using safe calendar date math
   const computedDays = useMemo(() => {
-    let baseCount = 3;
-    if (trip?.startDate && trip?.endDate) {
-      const start = new Date(trip.startDate).getTime();
-      const end = new Date(trip.endDate).getTime();
-      const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
-      baseCount = diffDays;
-    }
+    const baseCount = calculateTripDays(trip?.startDate, trip?.endDate);
     const maxDayFromPlaces = places.reduce((max, p) => Math.max(max, p.dayNumber || 1), 1);
     const totalDays = Math.max(baseCount + extraDaysCount, maxDayFromPlaces);
 
     return Array.from({ length: totalDays }, (_, i) => {
       const dayNum = i + 1;
       let dateLabel = `Day ${dayNum}`;
-      if (trip?.startDate) {
-        const d = new Date(trip.startDate);
-        d.setDate(d.getDate() + i);
+      const startDate = parseCalendarDate(trip?.startDate);
+      if (startDate) {
+        const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
         dateLabel = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       }
       return { num: dayNum, date: dateLabel };
@@ -112,6 +112,13 @@ export default function TripMapScreen() {
       .filter((p) => (p.dayNumber || 1) === activeDay)
       .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [places, activeDay]);
+
+  // Places with valid coordinates for the current active day
+  const placesWithCoords = useMemo(() => {
+    return currentDayPlaces.filter(
+      (p) => typeof p.lat === 'number' && typeof p.lng === 'number' && (p.lat !== 0 || p.lng !== 0)
+    );
+  }, [currentDayPlaces]);
 
   const handleAddDay = () => {
     setExtraDaysCount((prev) => prev + 1);
@@ -137,11 +144,12 @@ export default function TripMapScreen() {
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
         : 0;
 
+      const coords = await geocodePlace(placeAddress.trim() || placeName.trim(), trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: placeName.trim(),
         address: placeAddress.trim() || placeName.trim(),
-        lat: 0.0,
-        lng: 0.0,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
         dayNumber: activeDay,
         category: placeCategory,
         orderIndex: nextOrder,
@@ -149,8 +157,8 @@ export default function TripMapScreen() {
       });
 
       setAddPlaceModalVisible(false);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -160,7 +168,10 @@ export default function TripMapScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deletePlaceMutation.mutate(place.id),
+        onPress: () =>
+          deletePlaceMutation.mutate(place.id, {
+            onError: (err: unknown) => Alert.alert('Error', getErrorMessage(err)),
+          }),
       },
     ]);
   };
@@ -178,8 +189,8 @@ export default function TripMapScreen() {
         note: editNoteText.trim(),
       });
       setEditingPlace(null);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update note.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -199,8 +210,8 @@ export default function TripMapScreen() {
 
     try {
       await reorderPlacesMutation.mutateAsync(updates);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to reorder places.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to reorder places.');
     }
   };
 
@@ -215,8 +226,8 @@ export default function TripMapScreen() {
       });
       const list = Array.isArray(res) ? res : (res as any)?.suggestions || [];
       setAiSuggestions(list);
-    } catch (err: any) {
-      Alert.alert('AI Guide Error', err?.response?.data?.message || 'Failed to generate itinerary suggestions.');
+    } catch (err: unknown) {
+      Alert.alert('AI Guide Error', getErrorMessage(err) || 'Failed to generate itinerary suggestions.');
     } finally {
       setAiLoading(false);
     }
@@ -228,11 +239,12 @@ export default function TripMapScreen() {
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
         : 0;
 
+      const coords = await geocodePlace(sug.location || sug.title || sug.name || '', trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: sug.title || sug.name || 'AI Activity',
         address: sug.location || trip?.destination || 'Destination Area',
-        lat: 0.0,
-        lng: 0.0,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
         dayNumber: activeDay,
         category: sug.category || 'attraction',
         orderIndex: nextOrder,
@@ -240,8 +252,8 @@ export default function TripMapScreen() {
       });
 
       Alert.alert('Added', `"${sug.title || sug.name}" added to Day ${activeDay}!`);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -249,8 +261,26 @@ export default function TripMapScreen() {
     return <LoadingState message="Loading itinerary and map..." fullscreen />;
   }
 
-  if (!trip) {
-    return <ErrorState title="Trip Not Found" message="Could not load itinerary for this trip." onRetry={refetchPlaces} fullscreen />;
+  if (tripError || !trip) {
+    return (
+      <ErrorState
+        title="Failed to Load Trip"
+        message={getErrorMessage(tripErrorObj) || 'Could not load details for this trip.'}
+        onRetry={refetchTrip}
+        fullscreen
+      />
+    );
+  }
+
+  if (placesError) {
+    return (
+      <ErrorState
+        title="Failed to Load Places"
+        message={getErrorMessage(placesErrorObj) || 'Could not load itinerary places for this trip.'}
+        onRetry={refetchPlaces}
+        fullscreen
+      />
+    );
   }
 
   return (
@@ -258,10 +288,6 @@ export default function TripMapScreen() {
       {/* Top Header Bar */}
       <View style={styles.headerBar}>
         <View style={{ flex: 1 }}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={16} color={Theme.colors.accent} />
-            <Text style={styles.backBtnText}>Trip</Text>
-          </TouchableOpacity>
           <Text style={styles.screenTitle} numberOfLines={1}>{trip.name}</Text>
           <Text style={styles.screenSubtitle}>Day-by-Day Itinerary & Map</Text>
         </View>
@@ -330,45 +356,14 @@ export default function TripMapScreen() {
           />
         }
       >
-        {/* Visual Map Canvas / Coordinates Banner */}
+        {/* Real Map / Interactive Map Banner */}
         <View style={styles.mapCanvasCard}>
-          <View style={styles.mapGridPattern} />
-
-          {currentDayPlaces.length === 0 ? (
-            <View style={styles.mapEmptyState}>
-              <Ionicons name="map-outline" size={32} color={Theme.colors.textMuted} />
-              <Text style={styles.mapEmptyTitle}>Map View for {trip.destination}</Text>
-              <Text style={styles.mapEmptySubtitle}>
-                Add stops to Day {activeDay} to plot them on the map.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.mapMarkersContainer}>
-              <View style={styles.mapHeaderBadge}>
-                <Ionicons name="location" size={14} color={Theme.colors.accent} />
-                <Text style={styles.mapHeaderBadgeText}>
-                  {currentDayPlaces.length} {currentDayPlaces.length === 1 ? 'Stop' : 'Stops'} Scheduled for Day {activeDay}
-                </Text>
-              </View>
-
-              <View style={styles.pinsWrap}>
-                {currentDayPlaces.map((place, idx) => (
-                  <View key={place.id} style={styles.mapPinRow}>
-                    <View style={styles.pinNumberBadge}>
-                      <Text style={styles.pinNumberText}>{idx + 1}</Text>
-                    </View>
-                    <View style={styles.pinInfo}>
-                      <Text style={styles.pinName} numberOfLines={1}>{place.name}</Text>
-                      <Text style={styles.pinAddress} numberOfLines={1}>{place.address}</Text>
-                    </View>
-                    <View style={styles.pinCategoryTag}>
-                      <Text style={styles.pinCategoryText}>{place.category || 'Spot'}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <TripMapView
+            destination={trip.destination}
+            activeDay={activeDay}
+            places={currentDayPlaces}
+            placesWithCoords={placesWithCoords}
+          />
         </View>
 
         {/* Places Timeline List for Day */}
@@ -418,6 +413,9 @@ export default function TripMapScreen() {
 
                     <Text style={styles.placeAddress}>
                       <Ionicons name="location-outline" size={12} color={Theme.colors.textMuted} /> {place.address}
+                      {typeof place.lat === 'number' && typeof place.lng === 'number' && (place.lat !== 0 || place.lng !== 0)
+                        ? ` • ${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}`
+                        : ' • Location not set'}
                     </Text>
 
                     {place.note ? (
@@ -471,213 +469,178 @@ export default function TripMapScreen() {
       </ScrollView>
 
       {/* Add Place Modal */}
-      <Modal visible={addPlaceModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Stop to Day {activeDay}</Text>
-              <TouchableOpacity onPress={() => setAddPlaceModalVisible(false)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+      <BottomSheetModal
+        visible={addPlaceModalVisible}
+        onClose={() => setAddPlaceModalVisible(false)}
+        title={`Add Stop to Day ${activeDay}`}
+      >
+        <Input
+          label="Place / Activity Name"
+          placeholder="e.g. Louvre Museum"
+          value={placeName}
+          onChangeText={setPlaceName}
+        />
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Input
-                label="Place / Activity Name"
-                placeholder="e.g. Louvre Museum"
-                value={placeName}
-                onChangeText={setPlaceName}
+        <Input
+          label="Address / Area"
+          placeholder="e.g. Rue de Rivoli, Paris"
+          value={placeAddress}
+          onChangeText={setPlaceAddress}
+        />
+
+        <Text style={styles.fieldLabel}>Category</Text>
+        <View style={styles.categoryPickerRow}>
+          {CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categoryChoice,
+                placeCategory === cat.id && styles.categoryChoiceActive,
+              ]}
+              onPress={() => setPlaceCategory(cat.id)}
+            >
+              <Ionicons
+                name={cat.icon as any}
+                size={14}
+                color={placeCategory === cat.id ? Theme.colors.accentText : Theme.colors.textMuted}
               />
-
-              <Input
-                label="Address / Area"
-                placeholder="e.g. Rue de Rivoli, Paris"
-                value={placeAddress}
-                onChangeText={setPlaceAddress}
-              />
-
-              <Text style={styles.fieldLabel}>Category</Text>
-              <View style={styles.categoryPickerRow}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.categoryChoice,
-                      placeCategory === cat.id && styles.categoryChoiceActive,
-                    ]}
-                    onPress={() => setPlaceCategory(cat.id)}
-                  >
-                    <Ionicons
-                      name={cat.icon as any}
-                      size={14}
-                      color={placeCategory === cat.id ? Theme.colors.accentText : Theme.colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.categoryChoiceText,
-                        placeCategory === cat.id && styles.categoryChoiceTextActive,
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Input
-                label="Notes / Tips (Optional)"
-                placeholder="Opening times, booking IDs, tips..."
-                value={placeNote}
-                onChangeText={setPlaceNote}
-                multiline
-                numberOfLines={3}
-              />
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancel"
-                  variant="outline"
-                  onPress={() => setAddPlaceModalVisible(false)}
-                  style={{ flex: 1, marginRight: 8 }}
-                />
-                <Button
-                  title="Save Place"
-                  onPress={handleSavePlace}
-                  isLoading={addPlaceMutation.isPending}
-                  style={{ flex: 1, marginLeft: 8 }}
-                />
-              </View>
-            </ScrollView>
-          </View>
+              <Text
+                style={[
+                  styles.categoryChoiceText,
+                  placeCategory === cat.id && styles.categoryChoiceTextActive,
+                ]}
+              >
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      </Modal>
+
+        <Input
+          label="Notes / Tips (Optional)"
+          placeholder="Opening times, booking IDs, tips..."
+          value={placeNote}
+          onChangeText={setPlaceNote}
+          multiline
+          numberOfLines={3}
+        />
+
+        <View style={styles.modalButtons}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={() => setAddPlaceModalVisible(false)}
+            style={{ flex: 1, marginRight: 8 }}
+          />
+          <Button
+            title="Save Place"
+            onPress={handleSavePlace}
+            isLoading={addPlaceMutation.isPending}
+            style={{ flex: 1, marginLeft: 8 }}
+          />
+        </View>
+      </BottomSheetModal>
 
       {/* Edit Note Modal */}
-      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Stop Note</Text>
-              <TouchableOpacity onPress={() => setEditingPlace(null)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+      <BottomSheetModal
+        visible={Boolean(editingPlace)}
+        onClose={() => setEditingPlace(null)}
+        title="Edit Stop Note"
+        subtitle={editingPlace?.name}
+      >
+        <Input
+          label="Stop Notes & Instructions"
+          placeholder="Add details, confirmations..."
+          value={editNoteText}
+          onChangeText={setEditNoteText}
+          multiline
+          numberOfLines={4}
+        />
 
-            <Text style={{ color: Theme.colors.accent, fontSize: 13, marginBottom: 14 }}>
-              {editingPlace?.name}
-            </Text>
-
-            <Input
-              label="Stop Notes & Instructions"
-              placeholder="Add details, confirmations..."
-              value={editNoteText}
-              onChangeText={setEditNoteText}
-              multiline
-              numberOfLines={4}
-            />
-
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancel"
-                variant="outline"
-                onPress={() => setEditingPlace(null)}
-                style={{ flex: 1, marginRight: 8 }}
-              />
-              <Button
-                title="Update Note"
-                onPress={handleSaveNote}
-                isLoading={updateNoteMutation.isPending}
-                style={{ flex: 1, marginLeft: 8 }}
-              />
-            </View>
-          </View>
+        <View style={styles.modalButtons}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={() => setEditingPlace(null)}
+            style={{ flex: 1, marginRight: 8 }}
+          />
+          <Button
+            title="Update Note"
+            onPress={handleSaveNote}
+            isLoading={updateNoteMutation.isPending}
+            style={{ flex: 1, marginLeft: 8 }}
+          />
         </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* AI Planner Modal matching AiPlannerModal.vue */}
-      <Modal visible={aiPlannerVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
-                <Text style={styles.modalTitle}>AI Itinerary Planner</Text>
-              </View>
-              <TouchableOpacity onPress={() => setAiPlannerVisible(false)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 12, color: Theme.colors.textMuted }}>
-                Generate structured stops for {trip.destination} powered by
-              </Text>
-              <BrandLogo size="xs" title="TravelSync AI" />
-            </View>
-
-            <View style={styles.aiFilterRow}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Budget Focus"
-                  placeholder="e.g. moderate, luxury, budget"
-                  value={aiBudget}
-                  onChangeText={setAiBudget}
-                />
-              </View>
-              <View style={{ flex: 1.5, marginLeft: 8 }}>
-                <Input
-                  label="Interests"
-                  placeholder="e.g. art, museums, food"
-                  value={aiInterests}
-                  onChangeText={setAiInterests}
-                />
-              </View>
-            </View>
-
-            <Button
-              title={aiLoading ? 'Generating Plan...' : 'Generate AI Suggestions'}
-              onPress={handleGenerateAiPlan}
-              isLoading={aiLoading}
-              icon={<Ionicons name="sparkles-outline" size={16} color={Theme.colors.accentText} />}
+      <BottomSheetModal
+        visible={aiPlannerVisible}
+        onClose={() => setAiPlannerVisible(false)}
+        title="AI Itinerary Planner"
+        subtitle={`Generate structured stops for ${trip.destination}`}
+      >
+        <View style={styles.aiFilterRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label="Budget Focus"
+              placeholder="e.g. moderate, luxury, budget"
+              value={aiBudget}
+              onChangeText={setAiBudget}
             />
-
-            <ScrollView style={{ marginTop: 14, maxHeight: 300 }}>
-              {aiLoading ? (
-                <View style={{ paddingVertical: 30, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={Theme.colors.accent} />
-                  <Text style={{ color: Theme.colors.textMuted, fontSize: 12, marginTop: 10 }}>
-                    Crafting personalized itinerary stops...
-                  </Text>
-                </View>
-              ) : aiSuggestions.length === 0 ? (
-                <Text style={{ textAlign: 'center', color: Theme.colors.textMuted, fontSize: 12, paddingVertical: 20 }}>
-                  Tap &quot;Generate AI Suggestions&quot; to review curated places for your trip.
-                </Text>
-              ) : (
-                aiSuggestions.map((sug, idx) => (
-                  <View key={idx} style={styles.aiSugItem}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.aiSugTitle}>{sug.title || sug.name}</Text>
-                      {sug.description ? (
-                        <Text style={styles.aiSugDesc}>{sug.description}</Text>
-                      ) : null}
-                      <Text style={styles.aiSugTag}>{sug.category || 'Spot'}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.addSugBtn}
-                      onPress={() => handleAddAiPlaceToDay(sug)}
-                    >
-                      <Ionicons name="add" size={14} color={Theme.colors.accentText} />
-                      <Text style={styles.addSugBtnText}>Add</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
-            </ScrollView>
+          </View>
+          <View style={{ flex: 1.5, marginLeft: 8 }}>
+            <Input
+              label="Interests"
+              placeholder="e.g. art, museums, food"
+              value={aiInterests}
+              onChangeText={setAiInterests}
+            />
           </View>
         </View>
-      </Modal>
+
+        <Button
+          title={aiLoading ? 'Generating Plan...' : 'Generate AI Suggestions'}
+          onPress={handleGenerateAiPlan}
+          isLoading={aiLoading}
+          icon={<Ionicons name="sparkles-outline" size={16} color={Theme.colors.accentText} />}
+        />
+
+        <ScrollView style={{ marginTop: 14, maxHeight: 300 }}>
+          {aiLoading ? (
+            <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Theme.colors.accent} />
+              <Text style={{ color: Theme.colors.textMuted, fontSize: 12, marginTop: 10 }}>
+                Crafting personalized itinerary stops...
+              </Text>
+            </View>
+          ) : aiSuggestions.length === 0 ? (
+            <Text style={{ textAlign: 'center', color: Theme.colors.textMuted, fontSize: 12, paddingVertical: 20 }}>
+              Tap &quot;Generate AI Suggestions&quot; to review curated places for your trip.
+            </Text>
+          ) : (
+            aiSuggestions.map((sug, idx) => (
+              <View key={idx} style={styles.aiSugItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aiSugTitle}>{sug.title || sug.name}</Text>
+                  {sug.description ? (
+                    <Text style={styles.aiSugDesc}>{sug.description}</Text>
+                  ) : null}
+                  <Text style={styles.aiSugTag}>{sug.category || 'Spot'}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.addSugBtn}
+                  onPress={() => handleAddAiPlaceToDay(sug)}
+                >
+                  <Ionicons name="add" size={14} color={Theme.colors.accentText} />
+                  <Text style={styles.addSugBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -727,13 +690,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#91B49A',
+    backgroundColor: Theme.colors.accentMuted,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: Theme.borderRadius.md,
   },
   aiButtonText: {
-    color: '#151915',
+    color: Theme.colors.accentText,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -814,8 +777,101 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
+
+  webMapFallback: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webMapTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  webMapSubtitle: {
+    fontSize: 12,
+    color: Theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  webPinsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  webPinChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 6,
+  },
+  webPinNum: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.accent,
+  },
+  webPinText: {
+    fontSize: 12,
+    color: Theme.colors.textPrimary,
+    maxWidth: 120,
+  },
+  realMapWrapper: {
+    height: 240,
+    width: '100%',
+    position: 'relative',
+  },
+  realMapView: {
+    width: '100%',
+    height: '100%',
+  },
+  customMapPin: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Theme.colors.accent,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  customMapPinText: {
+    color: Theme.colors.accentText,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mapPlottedOverlay: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(26, 29, 27, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 6,
+  },
+  mapPlottedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
+  },
   mapCanvasCard: {
-    backgroundColor: '#141512',
+    backgroundColor: Theme.colors.surfaceElevated,
     borderRadius: Theme.borderRadius.xl,
     borderWidth: 1,
     borderColor: Theme.colors.border,

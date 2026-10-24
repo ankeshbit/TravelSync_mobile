@@ -6,9 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "travelsyncmobile",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "config": {},
+      "bundleIdentifier": "com.travelsync.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +19,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {}
+      },
+      "package": "com.travelsync.mobile"
     },
     "web": {
       "output": "server",
@@ -32,7 +38,22 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "TravelSync needs location access to geocode and plot itinerary stops on your map."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TravelSync needs photo library access to update your profile picture.",
+          "cameraPermission": "TravelSync needs camera access to take profile photos."
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,
