@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsTripOwner } from '@/hooks/useIsTripOwner';
 import { geocodePlace } from '@/utils/geocoding';
 import { formatDateRange, calculateTripDays } from '@/utils/dateUtils';
+import { filterTripMembers, getTripMemberCount } from '@/utils/tripMembers';
 import { getErrorMessage } from '@/api/client';
 import {
   useTrip,
@@ -308,8 +309,8 @@ export default function TripDetailsScreen() {
     const tripCurr = (trip.currency || 'USD').toUpperCase();
     return expCurr === tripCurr ? acc + (Number(curr.amount) || 0) : acc;
   }, 0);
-  const activeMembers = members || trip.members || [];
-  const totalMemberCount = 1 + activeMembers.length;
+  const activeMembers = filterTripMembers(members || trip.members, trip.ownerId);
+  const totalMemberCount = getTripMemberCount(members || trip.members, trip.ownerId);
 
   return (
     <View style={styles.container}>

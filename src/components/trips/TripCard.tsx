@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Trip, TripStatus } from '@/types/trip';
 import { formatDateRange } from '@/utils/dateUtils';
+import { getTripMemberCount } from '@/utils/tripMembers';
 import { Theme } from '@/constants/theme';
 
 interface TripCardProps {
@@ -12,7 +13,7 @@ interface TripCardProps {
 }
 
 export function TripCard({ trip, onPress }: TripCardProps) {
-  const membersCount = 1 + (trip.members ? trip.members.length : 0);
+  const membersCount = getTripMemberCount(trip.members, trip.ownerId);
   const placesCount = trip.places ? trip.places.length : 0;
 
 

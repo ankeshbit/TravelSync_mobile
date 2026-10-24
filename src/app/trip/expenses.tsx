@@ -19,6 +19,7 @@ import {
   useTripMembers,
 } from '@/hooks/useTripDetails';
 import { useAuth } from '@/context/AuthContext';
+import { filterTripMembers } from '@/utils/tripMembers';
 import { getErrorMessage } from '@/api/client';
 import { useTripSocket } from '@/hooks/useTripSocket';
 import { TripPresence } from '@/components/trips/TripPresence';
@@ -30,7 +31,7 @@ import { Button } from '@/components/common/Button';
 import { Card } from '@/components/common/Card';
 import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Theme } from '@/constants/theme';
-import { Expense } from '@/types/trip';
+import { TripMember, Expense } from '@/types/trip';
 import { parseAmount, filterSettlementsForCurrency } from '@/utils/money';
 
 const EXPENSE_CATEGORIES = [
@@ -75,9 +76,15 @@ export default function TripExpensesScreen() {
   const [selectedSplits, setSelectedSplits] = useState<string[]>([]);
   const [paidById, setPaidById] = useState<string>('');
 
+  const nonOwnerMembers = filterTripMembers(members, trip?.ownerId || trip?.owner?.id);
   const allMembers = [
     ...(trip?.owner ? [{ id: trip.owner.id, name: trip.owner.name, email: trip.owner.email, isOwner: true }] : []),
-    ...members.map((m) => ({ id: m.userId, name: m.user?.name || 'Member', email: m.user?.email || '', isOwner: false })),
+    ...nonOwnerMembers.map((m: TripMember) => ({
+      id: m.userId || m.id,
+      name: m.user?.name || 'Member',
+      email: m.user?.email || '',
+      isOwner: false,
+    })),
   ];
 
   // Available Currencies
