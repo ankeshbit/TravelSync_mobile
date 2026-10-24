@@ -10,7 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   useTrip,
@@ -29,7 +29,12 @@ import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
+import { geocodePlace } from '@/utils/geocoding';
+import { calculateTripDays, parseCalendarDate } from '@/utils/dateUtils';
 import { Place, AiSuggestion } from '@/types/trip';
+
+
+import { TripMapView } from '@/components/trips/TripMapView';
 
 const CATEGORIES = [
   { id: 'attraction', label: 'Attraction', icon: 'map-outline' },
@@ -42,7 +47,6 @@ const CATEGORIES = [
 export default function TripMapScreen() {
   const { id, tripId: paramTripId } = useLocalSearchParams<{ id?: string; tripId?: string }>();
   const tripId = id || paramTripId || '';
-  const router = useRouter();
 
   const { data: trip, isLoading: tripLoading } = useTrip(tripId);
   const {
@@ -82,24 +86,18 @@ export default function TripMapScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
 
-  // Calculate days list based on trip start and end date
+  // Calculate days list using safe calendar date math
   const computedDays = useMemo(() => {
-    let baseCount = 3;
-    if (trip?.startDate && trip?.endDate) {
-      const start = new Date(trip.startDate).getTime();
-      const end = new Date(trip.endDate).getTime();
-      const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
-      baseCount = diffDays;
-    }
+    const baseCount = calculateTripDays(trip?.startDate, trip?.endDate);
     const maxDayFromPlaces = places.reduce((max, p) => Math.max(max, p.dayNumber || 1), 1);
     const totalDays = Math.max(baseCount + extraDaysCount, maxDayFromPlaces);
 
     return Array.from({ length: totalDays }, (_, i) => {
       const dayNum = i + 1;
       let dateLabel = `Day ${dayNum}`;
-      if (trip?.startDate) {
-        const d = new Date(trip.startDate);
-        d.setDate(d.getDate() + i);
+      const startDate = parseCalendarDate(trip?.startDate);
+      if (startDate) {
+        const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
         dateLabel = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       }
       return { num: dayNum, date: dateLabel };
@@ -112,6 +110,13 @@ export default function TripMapScreen() {
       .filter((p) => (p.dayNumber || 1) === activeDay)
       .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [places, activeDay]);
+
+  // Places with valid coordinates for the current active day
+  const placesWithCoords = useMemo(() => {
+    return currentDayPlaces.filter(
+      (p) => typeof p.lat === 'number' && typeof p.lng === 'number' && (p.lat !== 0 || p.lng !== 0)
+    );
+  }, [currentDayPlaces]);
 
   const handleAddDay = () => {
     setExtraDaysCount((prev) => prev + 1);
@@ -137,11 +142,12 @@ export default function TripMapScreen() {
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
         : 0;
 
+      const coords = await geocodePlace(placeAddress.trim() || placeName.trim(), trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: placeName.trim(),
         address: placeAddress.trim() || placeName.trim(),
-        lat: 0.0,
-        lng: 0.0,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
         dayNumber: activeDay,
         category: placeCategory,
         orderIndex: nextOrder,
@@ -228,11 +234,12 @@ export default function TripMapScreen() {
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
         : 0;
 
+      const coords = await geocodePlace(sug.location || sug.title || sug.name || '', trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: sug.title || sug.name || 'AI Activity',
         address: sug.location || trip?.destination || 'Destination Area',
-        lat: 0.0,
-        lng: 0.0,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
         dayNumber: activeDay,
         category: sug.category || 'attraction',
         orderIndex: nextOrder,
@@ -258,10 +265,6 @@ export default function TripMapScreen() {
       {/* Top Header Bar */}
       <View style={styles.headerBar}>
         <View style={{ flex: 1 }}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={16} color={Theme.colors.accent} />
-            <Text style={styles.backBtnText}>Trip</Text>
-          </TouchableOpacity>
           <Text style={styles.screenTitle} numberOfLines={1}>{trip.name}</Text>
           <Text style={styles.screenSubtitle}>Day-by-Day Itinerary & Map</Text>
         </View>
@@ -330,45 +333,14 @@ export default function TripMapScreen() {
           />
         }
       >
-        {/* Visual Map Canvas / Coordinates Banner */}
+        {/* Real Map / Interactive Map Banner */}
         <View style={styles.mapCanvasCard}>
-          <View style={styles.mapGridPattern} />
-
-          {currentDayPlaces.length === 0 ? (
-            <View style={styles.mapEmptyState}>
-              <Ionicons name="map-outline" size={32} color={Theme.colors.textMuted} />
-              <Text style={styles.mapEmptyTitle}>Map View for {trip.destination}</Text>
-              <Text style={styles.mapEmptySubtitle}>
-                Add stops to Day {activeDay} to plot them on the map.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.mapMarkersContainer}>
-              <View style={styles.mapHeaderBadge}>
-                <Ionicons name="location" size={14} color={Theme.colors.accent} />
-                <Text style={styles.mapHeaderBadgeText}>
-                  {currentDayPlaces.length} {currentDayPlaces.length === 1 ? 'Stop' : 'Stops'} Scheduled for Day {activeDay}
-                </Text>
-              </View>
-
-              <View style={styles.pinsWrap}>
-                {currentDayPlaces.map((place, idx) => (
-                  <View key={place.id} style={styles.mapPinRow}>
-                    <View style={styles.pinNumberBadge}>
-                      <Text style={styles.pinNumberText}>{idx + 1}</Text>
-                    </View>
-                    <View style={styles.pinInfo}>
-                      <Text style={styles.pinName} numberOfLines={1}>{place.name}</Text>
-                      <Text style={styles.pinAddress} numberOfLines={1}>{place.address}</Text>
-                    </View>
-                    <View style={styles.pinCategoryTag}>
-                      <Text style={styles.pinCategoryText}>{place.category || 'Spot'}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <TripMapView
+            destination={trip.destination}
+            activeDay={activeDay}
+            places={currentDayPlaces}
+            placesWithCoords={placesWithCoords}
+          />
         </View>
 
         {/* Places Timeline List for Day */}
@@ -418,6 +390,9 @@ export default function TripMapScreen() {
 
                     <Text style={styles.placeAddress}>
                       <Ionicons name="location-outline" size={12} color={Theme.colors.textMuted} /> {place.address}
+                      {typeof place.lat === 'number' && typeof place.lng === 'number' && (place.lat !== 0 || place.lng !== 0)
+                        ? ` • ${place.lat.toFixed(4)}, ${place.lng.toFixed(4)}`
+                        : ' • Location not set'}
                     </Text>
 
                     {place.note ? (
@@ -813,6 +788,99 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+
+  webMapFallback: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  webMapTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  webMapSubtitle: {
+    fontSize: 12,
+    color: Theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  webPinsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  webPinChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 6,
+  },
+  webPinNum: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Theme.colors.accent,
+  },
+  webPinText: {
+    fontSize: 12,
+    color: Theme.colors.textPrimary,
+    maxWidth: 120,
+  },
+  realMapWrapper: {
+    height: 240,
+    width: '100%',
+    position: 'relative',
+  },
+  realMapView: {
+    width: '100%',
+    height: '100%',
+  },
+  customMapPin: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Theme.colors.accent,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  customMapPinText: {
+    color: Theme.colors.accentText,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mapPlottedOverlay: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(26, 29, 27, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 6,
+  },
+  mapPlottedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
   },
   mapCanvasCard: {
     backgroundColor: '#141512',

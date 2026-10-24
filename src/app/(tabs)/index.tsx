@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +30,15 @@ export default function DashboardScreen() {
   const { user, firebaseUser, isInitializing } = useAuth();
   const [aiChatVisible, setAiChatVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('Upcoming');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const {
     data: tripsData,
@@ -38,7 +47,10 @@ export default function DashboardScreen() {
     error: tripsErr,
     refetch: refetchTrips,
     isRefetching,
-  } = useTrips();
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useTrips(debouncedSearch);
 
   const {
     data: summary,
@@ -58,8 +70,9 @@ export default function DashboardScreen() {
     await Promise.all([refetchTrips(), refetchSummary()]);
   };
 
-  const rawTrips = tripsData?.trips;
-  const trips = useMemo(() => rawTrips || [], [rawTrips]);
+  const trips = useMemo(() => {
+    return tripsData?.pages.flatMap((page) => page?.trips || []) || [];
+  }, [tripsData]);
   const displayName = user?.name || firebaseUser?.displayName || firebaseUser?.email?.split('@')[0] || 'Traveler';
 
   // Filtered trips list matching website DashboardView.vue
@@ -233,6 +246,19 @@ export default function DashboardScreen() {
             onPress={() => router.push({ pathname: '/trip/[id]', params: { id: item.id } })}
           />
         )}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          isFetchingNextPage ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Theme.colors.accent} />
+            </View>
+          ) : undefined
+        }
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={
           searchQuery ? (

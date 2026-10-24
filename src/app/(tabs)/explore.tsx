@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,35 +7,42 @@ import {
   StyleSheet,
   RefreshControl,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useExploreDestinations } from '@/hooks/useTrips';
-import { LoadingState } from '@/components/common/LoadingState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Theme } from '@/constants/theme';
 import { ExploreDestination } from '@/types/trip';
+import { getErrorMessage } from '@/api/client';
 
 export default function ExploreScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
+  // Real 350ms debounce with timer cleanup
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim());
+    }, 350);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
   const {
     data: destinations = [],
     isLoading,
     isError,
+    error,
     refetch,
     isRefetching,
   } = useExploreDestinations(debouncedQuery);
-
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    // Simple debounce trigger
-    setDebouncedQuery(text.trim());
-  };
 
   const handlePlanDestination = (destName: string) => {
     router.push({
@@ -44,24 +51,9 @@ export default function ExploreScreen() {
     });
   };
 
-  if (isLoading && !isRefetching) {
-    return <LoadingState message="Discovering top destinations..." fullscreen />;
-  }
-
-  if (isError && destinations.length === 0) {
-    return (
-      <ErrorState
-        title="Failed to Load Destinations"
-        message="Could not load community travel destinations. Please try again."
-        onRetry={refetch}
-        fullscreen
-      />
-    );
-  }
-
   return (
     <View style={styles.container}>
-      {/* Search Header */}
+      {/* Search Header - Rendered outside early returns so TextInput never unmounts */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={18} color={Theme.colors.textMuted} />
@@ -69,86 +61,105 @@ export default function ExploreScreen() {
             placeholder="Search popular destinations..."
             placeholderTextColor={Theme.colors.textMuted}
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={setSearchQuery}
             style={styles.searchInput}
             autoCapitalize="none"
+            clearButtonMode="while-editing"
           />
           {searchQuery ? (
-            <TouchableOpacity onPress={() => handleSearch('')}>
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
               <Ionicons name="close-circle" size={18} color={Theme.colors.textMuted} />
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
 
-      <FlatList
-        data={destinations}
-        keyExtractor={(item: ExploreDestination) => item.name}
-        renderItem={({ item }: { item: ExploreDestination }) => (
-          <View style={styles.card}>
-            {item.coverImageUrl ? (
-              <Image source={{ uri: item.coverImageUrl }} style={styles.cardImage} contentFit="cover" />
-            ) : (
-              <View style={styles.cardImagePlaceholder}>
-                <Ionicons name="earth-outline" size={36} color={Theme.colors.textMuted} />
-              </View>
-            )}
-
-            <View style={styles.cardContent}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.destName} numberOfLines={1}>{item.name}</Text>
-                <View style={styles.tripCountBadge}>
-                  <Ionicons name="airplane-outline" size={12} color={Theme.colors.accent} />
-                  <Text style={styles.tripCountText}>
-                    {item.tripCount} {item.tripCount === 1 ? 'trip' : 'trips'}
-                  </Text>
+      {/* List Area */}
+      {isLoading && destinations.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={Theme.colors.accent} />
+          <Text style={styles.loadingText}>Discovering top destinations...</Text>
+        </View>
+      ) : isError && destinations.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <ErrorState
+            title="Failed to Load Destinations"
+            message={getErrorMessage(error)}
+            onRetry={refetch}
+          />
+        </View>
+      ) : (
+        <FlatList
+          data={destinations}
+          keyExtractor={(item: ExploreDestination, index: number) => `${item.name}-${index}`}
+          renderItem={({ item }: { item: ExploreDestination }) => (
+            <View style={styles.card}>
+              {item.coverImageUrl ? (
+                <Image source={{ uri: item.coverImageUrl }} style={styles.cardImage} contentFit="cover" />
+              ) : (
+                <View style={styles.cardImagePlaceholder}>
+                  <Ionicons name="earth-outline" size={36} color={Theme.colors.textMuted} />
                 </View>
-              </View>
+              )}
 
-              <View style={styles.cardFooter}>
-                <View>
-                  <Text style={styles.budgetLabel}>Avg Budget / Person</Text>
-                  <Text style={styles.budgetValue}>
-                    {item.averageBudgetPerPerson > 0
-                      ? `INR ${item.averageBudgetPerPerson.toLocaleString()}`
-                      : 'Flexible'}
-                  </Text>
+              <View style={styles.cardContent}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.destName} numberOfLines={1}>{item.name}</Text>
+                  <View style={styles.tripCountBadge}>
+                    <Ionicons name="airplane-outline" size={12} color={Theme.colors.accent} />
+                    <Text style={styles.tripCountText}>
+                      {item.tripCount} {item.tripCount === 1 ? 'trip' : 'trips'}
+                    </Text>
+                  </View>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.planBtn}
-                  onPress={() => handlePlanDestination(item.name)}
-                >
-                  <Ionicons name="add" size={16} color={Theme.colors.accentText} />
-                  <Text style={styles.planBtnText}>Plan Trip</Text>
-                </TouchableOpacity>
+                <View style={styles.cardFooter}>
+                  <View>
+                    <Text style={styles.budgetLabel}>Avg Budget / Person</Text>
+                    <Text style={styles.budgetValue}>
+                      {item.averageBudgetPerPerson > 0
+                        ? item.currency
+                          ? `${item.currency} ${item.averageBudgetPerPerson.toLocaleString()}`
+                          : item.averageBudgetPerPerson.toLocaleString()
+                        : 'Flexible'}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.planBtn}
+                    onPress={() => handlePlanDestination(item.name)}
+                  >
+                    <Ionicons name="add" size={16} color={Theme.colors.accentText} />
+                    <Text style={styles.planBtnText}>Plan Trip</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        )}
-        ListEmptyComponent={
-          <EmptyState
-            icon="compass-outline"
-            title="No Destinations Found"
-            message={
-              searchQuery
-                ? `No destinations match "${searchQuery}". Try a different search.`
-                : 'As you and your travel companions plan trips, popular destinations will appear here.'
-            }
-          />
-        }
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={() => {
-              refetch();
-            }}
-            colors={[Theme.colors.accent]}
-            tintColor={Theme.colors.accent}
-          />
-        }
-      />
+          )}
+          ListEmptyComponent={
+            <EmptyState
+              icon="compass-outline"
+              title="No Destinations Found"
+              message={
+                searchQuery
+                  ? `No destinations match "${searchQuery}". Try a different search.`
+                  : 'As you and your travel companions plan trips, popular destinations will appear here.'
+              }
+            />
+          }
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefetching}
+              onRefresh={() => {
+                refetch();
+              }}
+              colors={[Theme.colors.accent]}
+              tintColor={Theme.colors.accent}
+            />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -180,6 +191,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: Theme.colors.textPrimary,
+  },
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Theme.colors.textMuted,
   },
   listContent: {
     padding: 16,

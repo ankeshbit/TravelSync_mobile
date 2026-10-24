@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUpdateTrip, useDeleteTrip } from '@/hooks/useTrips';
 import { useTrip } from '@/hooks/useTripDetails';
-import { useAuth } from '@/context/AuthContext';
+import { useIsTripOwner } from '@/hooks/useIsTripOwner';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { LoadingState } from '@/components/common/LoadingState';
@@ -54,7 +54,7 @@ export default function EditTripScreen() {
 
 function EditTripForm({ trip }: { trip: Trip }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const isOwner = useIsTripOwner(trip);
   const updateTripMutation = useUpdateTrip(trip.id);
   const deleteTripMutation = useDeleteTrip();
 
@@ -73,7 +73,9 @@ function EditTripForm({ trip }: { trip: Trip }) {
   const [status, setStatus] = useState<TripStatus>(trip.status || 'planning');
   const [coverImageUrl, setCoverImageUrl] = useState(trip.coverImageUrl || '');
 
-  const isOwner = user && (trip.ownerId === user.id || trip.owner?.id === user.id);
+
+
+// Edit form is accessible while Danger Zone (Delete Trip) is gated on isOwner [BACKEND?]
 
   const handleUpdate = async () => {
     if (!name.trim()) {
@@ -316,6 +318,26 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     marginTop: 10,
+  },
+  accessContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    backgroundColor: Theme.colors.background,
+  },
+  accessTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  accessMessage: {
+    fontSize: 14,
+    color: Theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   dangerZone: {
     marginTop: 36,

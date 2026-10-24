@@ -60,6 +60,12 @@ export default function ProfileScreen() {
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
+
+  const closeDeleteModal = () => {
+    setDeleteModalVisible(false);
+    setOtpCode('');
+    setDevOtp(null);
+  };
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Password reset
@@ -177,8 +183,10 @@ export default function ProfileScreen() {
             try {
               setIsSendingOtp(true);
               const res = await sendDeleteOtp(email);
-              if (res?.devOtp) {
+              if (__DEV__ && res?.devOtp) {
                 setDevOtp(res.devOtp);
+              } else {
+                setDevOtp(null);
               }
               setDeleteModalVisible(true);
             } catch (err: any) {
@@ -193,15 +201,15 @@ export default function ProfileScreen() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!otpCode.trim()) {
-      Alert.alert('Required', 'Please enter the 6-digit verification code.');
+    if (!/^d{6}$/.test(otpCode.trim())) {
+      Alert.alert('Invalid Code', 'Please enter a valid 6-digit numeric verification code.');
       return;
     }
 
     try {
       setIsDeleting(true);
       await deleteAccount(otpCode.trim());
-      setDeleteModalVisible(false);
+      closeDeleteModal();
       await logout();
       Alert.alert('Account Deleted', 'Your TravelSync account has been permanently removed.');
       router.replace('/(auth)/login');
@@ -586,7 +594,7 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Delete OTP Verification Modal */}
-      <Modal visible={deleteModalVisible} animationType="slide" transparent>
+      <Modal visible={deleteModalVisible} animationType="slide" transparent onRequestClose={closeDeleteModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -594,7 +602,7 @@ export default function ProfileScreen() {
                 <Ionicons name="warning-outline" size={22} color={Theme.colors.status.error} />
                 <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
               </View>
-              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+              <TouchableOpacity onPress={closeDeleteModal}>
                 <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -603,12 +611,12 @@ export default function ProfileScreen() {
               Please enter the 6-digit verification code sent to <Text style={{ color: Theme.colors.accent }}>{email}</Text>.
             </Text>
 
-            {devOtp && (
+            {__DEV__ && devOtp ? (
               <View style={styles.devOtpBanner}>
                 <Text style={styles.devOtpTitle}>DEV OTP Code (Development Server):</Text>
                 <Text style={styles.devOtpCode}>{devOtp}</Text>
               </View>
-            )}
+            ) : null}
 
             <Input
               label="6-Digit OTP Code"
@@ -630,7 +638,7 @@ export default function ProfileScreen() {
               <Button
                 title="Cancel"
                 variant="outline"
-                onPress={() => setDeleteModalVisible(false)}
+                onPress={closeDeleteModal}
               />
             </View>
           </View>

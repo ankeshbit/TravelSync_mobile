@@ -15,8 +15,8 @@ export interface Place {
   tripId: string;
   name: string;
   address: string;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
   dayNumber: number;
   orderIndex: number;
   category: string;
@@ -122,8 +122,8 @@ export interface UpdateTripDto {
 export interface CreatePlaceDto {
   name: string;
   address: string;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
   dayNumber: number;
   orderIndex?: number;
   category?: string;
@@ -172,6 +172,7 @@ export interface ExploreDestination {
   tripCount: number;
   coverImageUrl?: string;
   averageBudgetPerPerson: number;
+  currency?: string;
 }
 
 export interface AiSuggestion {

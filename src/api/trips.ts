@@ -20,9 +20,14 @@ import {
 /**
  * Fetch all trips for the authenticated user.
  */
-export async function getTrips(page = 1, limit = 20): Promise<TripListResponse> {
+export async function getTrips(page = 1, limit = 20, search?: string): Promise<TripListResponse> {
+  const params: Record<string, any> = { page, limit };
+  if (search && search.trim()) {
+    params.search = search.trim();
+    params.q = search.trim();
+  }
   const response = await api.get<TripListResponse>('/trips', {
-    params: { page, limit },
+    params,
   });
   return response.data;
 }

@@ -193,3 +193,20 @@ Travelsync-mobile/
 │       │   └── create.tsx    # Plan new trip modal
 │       └── index.tsx         # Redirect to /(tabs)
 ```
+
+---
+
+## 🗺️ Google Maps API Setup (iOS & Android)
+
+TravelSync Mobile features an interactive map planner using `react-native-maps` on native devices with a responsive fallback on Web.
+
+To enable native Google Maps:
+1. Obtain a Google Maps API Key from the [Google Cloud Console](https://console.cloud.google.com/google/maps-apis).
+2. Enable **Maps SDK for Android** and **Maps SDK for iOS**.
+3. Add your API key to your local `.env` file:
+   ```env
+   EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+   ```
+4. The key is automatically configured in `app.json` under:
+   - `expo.ios.config.googleMapsApiKey`
+   - `expo.android.config.googleMaps.apiKey`

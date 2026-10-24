@@ -19,21 +19,26 @@ import {
 } from '@/api/trips';
 import { CreatePlaceDto, CreateExpenseDto } from '@/types/trip';
 import { TRIP_KEYS } from './useTrips';
+import { useIsAuthed } from './useIsAuthed';
 
 export function useTrip(id: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.detail(id),
     queryFn: () => getTripById(id),
-    enabled: Boolean(id),
+    enabled: isAuthed && Boolean(id),
     staleTime: 1000 * 60 * 2,
   });
 }
 
 export function useTripMembers(tripId: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.members(tripId),
     queryFn: () => getTripMembers(tripId),
-    enabled: Boolean(tripId),
+    enabled: isAuthed && Boolean(tripId),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -77,10 +82,12 @@ export function useLeaveTrip(tripId: string) {
 }
 
 export function useTripPlaces(tripId: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.places(tripId),
     queryFn: () => getTripPlaces(tripId),
-    enabled: Boolean(tripId),
+    enabled: isAuthed && Boolean(tripId),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -137,10 +144,12 @@ export function useReorderTripPlaces(tripId: string) {
 }
 
 export function useTripExpenses(tripId: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.expenses(tripId),
     queryFn: () => getTripExpenses(tripId),
-    enabled: Boolean(tripId),
+    enabled: isAuthed && Boolean(tripId),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -176,10 +185,12 @@ export function useDeleteTripExpense(tripId: string) {
 }
 
 export function useTripBalances(tripId: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.balances(tripId),
     queryFn: () => getTripBalances(tripId),
-    enabled: Boolean(tripId),
+    enabled: isAuthed && Boolean(tripId),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -191,10 +202,12 @@ export function useAiTripSuggestions(tripId: string) {
 }
 
 export function useTripActivity(tripId: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.activity(tripId),
     queryFn: () => getTripActivity(tripId),
-    enabled: Boolean(tripId),
+    enabled: isAuthed && Boolean(tripId),
     staleTime: 1000 * 60 * 2,
   });
 }

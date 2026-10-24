@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { io } from 'socket.io-client';
 import { auth } from '@/config/firebase';
 import { getSocketBaseUrl } from '@/config/env';
+import { TRIP_KEYS } from './useTrips';
 
 export interface ActiveMember {
   userId: string;
@@ -32,6 +33,7 @@ export function useTripSocket(
   const [isConnected, setIsConnected] = useState(false);
 
   const callbacksRef = useRef<UseTripSocketCallbacks | undefined>(callbacks);
+  const userConnectionCountsRef = useRef<Map<string, { count: number; name: string }>>(new Map());
 
   useEffect(() => {
     callbacksRef.current = callbacks;
@@ -57,6 +59,16 @@ export function useTripSocket(
       query: { tripId },
     });
 
+    const syncActiveMembers = () => {
+      const members: ActiveMember[] = [];
+      userConnectionCountsRef.current.forEach((val, userId) => {
+        if (val.count > 0) {
+          members.push({ userId, name: val.name });
+        }
+      });
+      setActiveMembers(members);
+    };
+
     socketInstance.on('connect', () => {
       setIsConnected(true);
     });
@@ -69,77 +81,110 @@ export function useTripSocket(
       console.warn('[Socket.IO] Connection error:', err.message);
     });
 
-    // Real-time Presence
+    // Real-time Presence with connection counting & deduplication
     socketInstance.on('presence:list', (list: any[]) => {
-      const formatted = (Array.isArray(list) ? list : []).map((u) => ({
-        userId: u.id || u.userId,
-        name: u.name || 'Member',
-      }));
-      setActiveMembers(formatted);
+      const map = new Map<string, { count: number; name: string }>();
+      if (Array.isArray(list)) {
+        for (const u of list) {
+          const uid = u?.id || u?.userId;
+          if (!uid) continue;
+          const existing = map.get(uid);
+          if (existing) {
+            existing.count += 1;
+          } else {
+            map.set(uid, { count: 1, name: u.name || 'Member' });
+          }
+        }
+      }
+      userConnectionCountsRef.current = map;
+      syncActiveMembers();
     });
 
     socketInstance.on('user:joined', (user: any) => {
-      const uid = user.id || user.userId;
-      setActiveMembers((prev) => {
-        if (prev.some((m) => m.userId === uid)) return prev;
-        return [...prev, { userId: uid, name: user.name || 'Member' }];
-      });
+      const uid = user?.id || user?.userId;
+      if (!uid) return;
+      const name = user?.name || 'Member';
+      const existing = userConnectionCountsRef.current.get(uid);
+      if (existing) {
+        existing.count += 1;
+        existing.name = name;
+      } else {
+        userConnectionCountsRef.current.set(uid, { count: 1, name });
+      }
+      syncActiveMembers();
     });
 
     socketInstance.on('user:left', (data: any) => {
-      const uid = data.userId || data.id;
-      setActiveMembers((prev) => prev.filter((m) => m.userId !== uid));
+      const uid = data?.userId || data?.id;
+      if (!uid) return;
+      const existing = userConnectionCountsRef.current.get(uid);
+      if (existing) {
+        existing.count -= 1;
+        if (existing.count <= 0) {
+          userConnectionCountsRef.current.delete(uid);
+        }
+      }
+      syncActiveMembers();
     });
 
     // Real-time Places & Itinerary
     socketInstance.on('place:added', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripPlaces', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onPlaceAdded?.();
     });
 
     socketInstance.on('place:deleted', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripPlaces', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onPlaceDeleted?.();
     });
 
     socketInstance.on('place:reordered', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripPlaces', tripId] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
       callbacksRef.current?.onPlaceReordered?.();
     });
 
     socketInstance.on('place:note_updated', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripPlaces', tripId] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       callbacksRef.current?.onPlaceNoteUpdated?.();
     });
 
     // Real-time Expenses & Balances
     socketInstance.on('expense:added', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripExpenses', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['tripBalances', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['tripSummary'] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.expenses(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.balances(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onExpenseAdded?.();
     });
 
     socketInstance.on('expense:deleted', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripExpenses', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['tripBalances', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['tripSummary'] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.expenses(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.balances(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onExpenseDeleted?.();
     });
 
     // Real-time Membership & Trip Meta
     socketInstance.on('member:joined', () => {
-      queryClient.invalidateQueries({ queryKey: ['tripMembers', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.members(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onMemberJoined?.();
     });
 
     socketInstance.on('trip:updated', () => {
-      queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
-      queryClient.invalidateQueries({ queryKey: ['trips'] });
-      queryClient.invalidateQueries({ queryKey: ['tripSummary'] });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.lists() });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
+      queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
       callbacksRef.current?.onTripUpdated?.();
     });
 
@@ -165,6 +210,7 @@ export function useTripSocket(
       socketInstance.removeAllListeners();
       socketInstance.disconnect();
       setIsConnected(false);
+      userConnectionCountsRef.current.clear();
       setActiveMembers([]);
     };
   }, [tripId, queryClient, router]);

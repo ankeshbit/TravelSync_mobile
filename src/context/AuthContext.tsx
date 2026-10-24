@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 import {
   User as FirebaseUser,
@@ -44,6 +45,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Platform-safe native Google OAuth hook
   const { isConfigured, isReady, promptGoogleAsync } = useNativeGoogleAuth();
 
+  const queryClient = useQueryClient();
+  const prevUidRef = useRef<string | null>(null);
   const clearError = useCallback(() => setError(null), []);
 
   const syncBackendUser = useCallback(async (): Promise<User | null> => {
@@ -68,19 +71,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+      const currentUid = fbUser?.uid || null;
+      if (prevUidRef.current !== null && prevUidRef.current !== currentUid) {
+        queryClient.clear();
+      }
+      prevUidRef.current = currentUid;
+
       setFirebaseUser(fbUser);
 
       if (fbUser) {
         await syncBackendUser();
       } else {
         setUser(null);
+        queryClient.clear();
       }
 
       setIsInitializing(false);
     });
 
     return () => unsubscribe();
-  }, [syncBackendUser]);
+  }, [syncBackendUser, queryClient]);
 
   const loginWithEmail = async (email: string, pass: string) => {
     setIsLoading(true);
@@ -222,6 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFirebaseUser(null);
       setUser(null);
       setError(null);
+      queryClient.clear();
     } catch (err: any) {
       setError(getErrorMessage(err));
     } finally {

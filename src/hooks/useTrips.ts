@@ -1,4 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useInfiniteQuery,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import {
   getTrips,
   getTripSummary,
@@ -8,11 +14,12 @@ import {
   getExploreDestinations,
 } from '@/api/trips';
 import { CreateTripDto, UpdateTripDto } from '@/types/trip';
+import { useIsAuthed } from './useIsAuthed';
 
 export const TRIP_KEYS = {
   all: ['trips'] as const,
   lists: () => [...TRIP_KEYS.all, 'list'] as const,
-  list: (page: number, limit: number) => [...TRIP_KEYS.lists(), { page, limit }] as const,
+  list: (search?: string) => [...TRIP_KEYS.lists(), { search: search || '' }] as const,
   summary: () => [...TRIP_KEYS.all, 'summary'] as const,
   detail: (id: string) => [...TRIP_KEYS.all, 'detail', id] as const,
   members: (id: string) => [...TRIP_KEYS.all, 'members', id] as const,
@@ -23,18 +30,31 @@ export const TRIP_KEYS = {
   explore: (q?: string) => ['explore', q || ''] as const,
 };
 
-export function useTrips(page = 1, limit = 20) {
-  return useQuery({
-    queryKey: TRIP_KEYS.list(page, limit),
-    queryFn: () => getTrips(page, limit),
+export function useTrips(search?: string, limit = 20) {
+  const isAuthed = useIsAuthed();
+
+  return useInfiniteQuery({
+    queryKey: TRIP_KEYS.list(search),
+    queryFn: ({ pageParam = 1 }) => getTrips(pageParam as number, limit, search),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage?.pagination?.hasNextPage) {
+        return lastPage.pagination.page + 1;
+      }
+      return undefined;
+    },
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 }
 
 export function useTripSummary() {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.summary(),
     queryFn: () => getTripSummary(),
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -78,9 +98,13 @@ export function useDeleteTrip() {
 }
 
 export function useExploreDestinations(query?: string) {
+  const isAuthed = useIsAuthed();
+
   return useQuery({
     queryKey: TRIP_KEYS.explore(query),
     queryFn: () => getExploreDestinations(query),
+    placeholderData: keepPreviousData,
+    enabled: isAuthed,
     staleTime: 1000 * 60 * 5, // 5 minutes cache
   });
 }

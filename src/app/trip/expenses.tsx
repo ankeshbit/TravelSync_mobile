@@ -55,17 +55,8 @@ export default function TripExpensesScreen() {
   const { data: balances, refetch: refetchBalances } = useTripBalances(tripId);
   const { data: members = [] } = useTripMembers(tripId);
 
-  // Real-time socket presence & updates
-  const { activeMembers } = useTripSocket(tripId, {
-    onExpenseAdded: () => {
-      refetchExpenses();
-      refetchBalances();
-    },
-    onExpenseDeleted: () => {
-      refetchExpenses();
-      refetchBalances();
-    },
-  });
+  // Real-time socket presence & updates (automatic TanStack Query invalidation)
+  const { activeMembers } = useTripSocket(tripId);
 
   const addExpenseMutation = useAddTripExpense(tripId);
   const deleteExpenseMutation = useDeleteTripExpense(tripId);

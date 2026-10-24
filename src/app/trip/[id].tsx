@@ -13,7 +13,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/context/AuthContext';
+import { useIsTripOwner } from '@/hooks/useIsTripOwner';
+import { geocodePlace } from '@/utils/geocoding';
+import { formatDateRange } from '@/utils/dateUtils';
 import {
   useTrip,
   useTripPlaces,
@@ -43,7 +45,7 @@ import { TripPresence } from '@/components/trips/TripPresence';
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  // useIsTripOwner handles user authorization checks
 
   const [activeTab, setActiveTab] = useState<'itinerary' | 'overview'>('itinerary');
 
@@ -93,17 +95,8 @@ export default function TripDetailsScreen() {
     refetch: refetchMembers,
   } = useTripMembers(id || '');
 
-  // Real-time Socket.IO collaboration
-  const { activeMembers: socketMembers } = useTripSocket(id || '', {
-    onPlaceAdded: () => refetchPlaces(),
-    onPlaceDeleted: () => refetchPlaces(),
-    onPlaceReordered: () => refetchPlaces(),
-    onPlaceNoteUpdated: () => refetchPlaces(),
-    onExpenseAdded: () => refetchExpenses(),
-    onExpenseDeleted: () => refetchExpenses(),
-    onMemberJoined: () => refetchMembers(),
-    onTripUpdated: () => refetchTrip(),
-  });
+  // Real-time Socket.IO collaboration with automatic TanStack Query invalidation
+  const { activeMembers: socketMembers } = useTripSocket(id || '');
 
   const addPlaceMutation = useAddTripPlace(id || '');
   const deletePlaceMutation = useDeleteTripPlace(id || '');
@@ -122,7 +115,7 @@ export default function TripDetailsScreen() {
     ]);
   };
 
-  const isOwner = trip?.ownerId === user?.id || trip?.owner?.id === user?.id;
+  const isOwner = useIsTripOwner(trip);
 
   const handleAddPlace = async () => {
     if (!placeName.trim()) {
@@ -131,11 +124,12 @@ export default function TripDetailsScreen() {
     }
 
     try {
+      const coords = await geocodePlace(placeAddress.trim() || placeName.trim(), trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: placeName.trim(),
         address: placeAddress.trim() || 'General area',
-        lat: 0.0,
-        lng: 0.0,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
         dayNumber: parseInt(placeDay, 10) || 1,
         category: placeCategory,
         duration: parseInt(placeDuration, 10) || 60,
@@ -248,17 +242,18 @@ export default function TripDetailsScreen() {
 
   const handleAddAiSuggestionToTrip = async (sug: AiSuggestion) => {
     try {
+      const coords = await geocodePlace(sug.location || sug.title || sug.name || '', trip?.destination);
+
       await addPlaceMutation.mutateAsync({
         name: sug.title || sug.name || 'AI Activity',
         address: sug.location || trip?.destination || 'Destination Area',
-        lat: 0.0,
-        lng: 0.0,
-        dayNumber: 1,
+        ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
+        dayNumber: (sug as any).dayNumber || 1,
         category: sug.category || 'attraction',
         duration: sug.duration || 60,
         note: sug.description || '',
       });
-      Alert.alert('Added', `"${sug.title || sug.name}" added to Day 1 itinerary!`);
+      Alert.alert('Added', `"${sug.title || sug.name}" added to itinerary!`);
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
     }
@@ -339,7 +334,7 @@ export default function TripDetailsScreen() {
               <View style={styles.heroMetaItem}>
                 <Ionicons name="calendar-outline" size={14} color={Theme.colors.textSecondary} />
                 <Text style={styles.heroMetaText}>
-                  {new Date(trip.startDate).toLocaleDateString()} - {new Date(trip.endDate).toLocaleDateString()}
+                  {formatDateRange(trip.startDate, trip.endDate)}
                 </Text>
               </View>
             </View>
