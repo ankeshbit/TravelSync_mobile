@@ -39,7 +39,7 @@ const PENDING_SYNC_KEY = (userId: string, tripId: string) => `@travelsync_offlin
 // Per-key promise queue to serialize read-modify-write operations
 const keyLocks = new Map<string, Promise<void>>();
 
-async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+export async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const currentLock = keyLocks.get(key) || Promise.resolve();
   let release: () => void;
   const nextLock = new Promise<void>((resolve) => {

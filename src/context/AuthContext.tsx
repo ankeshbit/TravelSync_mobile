@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const queryClient = useQueryClient();
   const prevUidRef = useRef<string | null>(null);
+  const isRegisteringRef = useRef(false);
   const clearError = useCallback(() => setError(null), []);
 
   const syncBackendUser = useCallback(async (): Promise<User | null> => {
@@ -80,7 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFirebaseUser(fbUser);
 
       if (fbUser) {
-        await syncBackendUser();
+        if (!isRegisteringRef.current) {
+          await syncBackendUser();
+        }
       } else {
         setUser(null);
         queryClient.clear();
@@ -204,9 +207,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registerWithEmail = async (name: string, email: string, pass: string) => {
     setIsLoading(true);
     setError(null);
+    isRegisteringRef.current = true;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
       await updateFirebaseProfile(cred.user, { displayName: name.trim() });
+      await cred.user.reload();
+      await cred.user.getIdToken(true);
       try {
         await sendEmailVerification(cred.user);
       } catch {
@@ -219,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
     } finally {
+      isRegisteringRef.current = false;
       setIsLoading(false);
     }
   };
@@ -292,7 +299,7 @@ function getFirebaseErrorMessage(error: any): string {
     case 'auth/popup-closed-by-user':
       return 'Sign-in window was closed. Please try again.';
     case 'auth/argument-error':
-      return 'Authentication configuration error: signInWithPopup is not supported in native React Native. Google OAuth credentials are required.';
+      return 'Invalid argument provided to authentication. Please check your inputs and credentials.';
     case 'auth/unauthorized-domain':
       return 'This domain is not authorized in Firebase Console (Authentication > Settings > Authorized domains).';
     default:

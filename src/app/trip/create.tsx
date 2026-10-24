@@ -10,20 +10,22 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCreateTrip } from '@/hooks/useTrips';
+import { validateTripForm, buildDefaultDates, dateStringToISO } from '@/utils/tripValidation';
+import { DatePickerField } from '@/components/common/DatePickerField';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Theme } from '@/constants/theme';
 
 function getInitialDates() {
-  const now = new Date();
-  const start = now.toISOString().split('T')[0];
-  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const end = nextWeek.toISOString().split('T')[0];
-  return { start, end };
+  const { startDate, endDate } = buildDefaultDates();
+  return { start: startDate, end: endDate };
 }
 
 export default function CreateTripScreen() {
   const router = useRouter();
+  const { firebaseUser } = useAuth();
   const params = useLocalSearchParams<{ destination?: string; name?: string }>();
   const createTripMutation = useCreateTrip();
 
@@ -35,6 +37,18 @@ export default function CreateTripScreen() {
   const [budget, setBudget] = useState('10000');
   const [currency, setCurrency] = useState('INR');
 
+  React.useEffect(() => {
+    if (!firebaseUser?.uid) return;
+    AsyncStorage.getItem(`user_prefs_${firebaseUser.uid}`).then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.preferredCurrency) setCurrency(parsed.preferredCurrency);
+        } catch {}
+      }
+    });
+  }, [firebaseUser?.uid]);
+
   const handleCreate = async () => {
     if (!name.trim()) {
       Alert.alert('Required', 'Please enter a name for your trip.');
@@ -44,8 +58,9 @@ export default function CreateTripScreen() {
       Alert.alert('Required', 'Please enter a destination.');
       return;
     }
-    if (!startDate || !endDate) {
-      Alert.alert('Required', 'Please enter both start and end dates.');
+    const validation = validateTripForm({ name, destination, startDate, endDate, budget, currency });
+    if (!validation.valid) {
+      Alert.alert('Validation Error', validation.errors.join('\n'));
       return;
     }
 
@@ -53,9 +68,9 @@ export default function CreateTripScreen() {
       const newTrip = await createTripMutation.mutateAsync({
         name: name.trim(),
         destination: destination.trim(),
-        startDate: new Date(startDate).toISOString(),
-        endDate: new Date(endDate).toISOString(),
-        budgetPerPerson: parseFloat(budget) || 0,
+        startDate: dateStringToISO(startDate),
+        endDate: dateStringToISO(endDate),
+        budgetPerPerson: parseFloat(String(budget)) || 0,
         currency: currency.trim().toUpperCase() || 'INR',
       });
 
@@ -94,20 +109,21 @@ export default function CreateTripScreen() {
         />
 
         <View style={styles.row}>
-          <Input
-            label="Start Date (YYYY-MM-DD)"
-            placeholder="2026-06-01"
-            value={startDate}
-            onChangeText={setStartDate}
-            containerStyle={{ flex: 1, marginRight: 8 }}
-          />
-          <Input
-            label="End Date (YYYY-MM-DD)"
-            placeholder="2026-06-08"
-            value={endDate}
-            onChangeText={setEndDate}
-            containerStyle={{ flex: 1, marginLeft: 8 }}
-          />
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <DatePickerField
+              label="Start Date"
+              value={startDate}
+              onChange={setStartDate}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <DatePickerField
+              label="End Date"
+              value={endDate}
+              onChange={setEndDate}
+              minimumDate={startDate ? new Date(startDate) : undefined}
+            />
+          </View>
         </View>
 
         <View style={styles.row}>

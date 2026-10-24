@@ -60,6 +60,10 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollViewRef = useRef<any>(null);
+  // M5: Store extracted_preferences to pass as context on next call
+  const extractedPrefsRef = useRef<Record<string, any>>({});
+  // M5: AbortController to ignore stale responses after reset/close
+  const abortRef = useRef<{ aborted: boolean }>({ aborted: false });
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -78,33 +82,53 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
 
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
+    abortRef.current = { aborted: false };
+    const thisAbort = abortRef.current;
 
     try {
-      const history = messages.map((m) => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.text,
-      }));
+      const res = await chatWithAiGuide(query, extractedPrefsRef.current);
 
-      const res = await chatWithAiGuide(query, history);
+      if (thisAbort.aborted) return; // discard stale response
+
+      // Store extracted preferences for next call
+      if (res?.extracted_preferences) {
+        extractedPrefsRef.current = {
+          ...extractedPrefsRef.current,
+          ...res.extracted_preferences,
+        };
+      }
 
       const botMsg: ChatMessage = {
         id: createMessageId('bot'),
         sender: 'bot',
-        text: res?.reply || res?.message || 'Here are some recommendations based on your preferences.',
+        text: res?.reply || res?.message || res?.assistant_response || 'Here are some recommendations based on your preferences.',
         destinations: res?.destinations || res?.recommendations || [],
         structuredFollowUps: res?.structuredFollowUps || [],
       };
 
       setMessages((prev) => [...prev, botMsg]);
-    } catch {
+    } catch (err: unknown) {
+      if (thisAbort.aborted) return;
+      const e = err as any;
+      let errText = 'I encountered an issue processing your request.';
+      const status = e?.response?.status;
+      if (!status || status === 0) {
+        errText = 'Network error – please check your connection.';
+      } else if (status === 401) {
+        errText = 'Authentication error. Please log in again.';
+      } else if (status === 429) {
+        errText = 'Too many requests. Please wait a moment before trying again.';
+      } else if (status >= 500) {
+        errText = 'The AI service encountered an error. Please try again shortly.';
+      }
       const errorMsg: ChatMessage = {
         id: createMessageId('bot_error'),
         sender: 'bot',
-        text: 'Sorry, I encountered an issue connecting to the TravelSync AI recommendation service. Please ensure the backend is running.',
+        text: errText,
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
-      setLoading(false);
+      if (!thisAbort.aborted) setLoading(false);
     }
   };
 
@@ -119,6 +143,9 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
   };
 
   const handleReset = () => {
+    abortRef.current.aborted = true;
+    extractedPrefsRef.current = {};
+    setLoading(false);
     setMessages([
       {
         id: 'welcome',
@@ -129,7 +156,7 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

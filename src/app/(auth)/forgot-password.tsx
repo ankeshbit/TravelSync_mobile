@@ -37,10 +37,12 @@ export default function ForgotPasswordScreen() {
       await sendPasswordResetEmail(auth, trimmed);
       setSubmitted(true);
     } catch (err: any) {
-      const msg = err.code === 'auth/user-not-found'
-        ? 'No account found with this email address.'
-        : err.message || 'Failed to send password reset email. Please try again.';
-      setError(msg);
+      // Non-enumerating messaging: if user not found, still treat as submitted
+      if (err.code === 'auth/user-not-found') {
+        setSubmitted(true);
+      } else {
+        setError(err.message || 'Failed to send password reset email. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

@@ -15,7 +15,8 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsTripOwner } from '@/hooks/useIsTripOwner';
 import { geocodePlace } from '@/utils/geocoding';
-import { formatDateRange } from '@/utils/dateUtils';
+import { formatDateRange, calculateTripDays } from '@/utils/dateUtils';
+import { getErrorMessage } from '@/api/client';
 import {
   useTrip,
   useTripPlaces,
@@ -70,6 +71,8 @@ export default function TripDetailsScreen() {
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+  // M5: Track added suggestion names to prevent duplicates
+  const [addedSuggestions, setAddedSuggestions] = useState<Set<string>>(new Set());
 
   const {
     data: trip,
@@ -82,16 +85,19 @@ export default function TripDetailsScreen() {
   const {
     data: places,
     isLoading: placesLoading,
+    isError: placesError,
     refetch: refetchPlaces,
   } = useTripPlaces(id || '');
 
   const {
     data: expenses,
+    isError: expensesError,
     refetch: refetchExpenses,
   } = useTripExpenses(id || '');
 
   const {
     data: members,
+    isError: membersError,
     refetch: refetchMembers,
   } = useTripMembers(id || '');
 
@@ -140,8 +146,8 @@ export default function TripDetailsScreen() {
       setPlaceName('');
       setPlaceAddress('');
       setPlaceNote('');
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place to itinerary.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -151,7 +157,11 @@ export default function TripDetailsScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deletePlaceMutation.mutate(place.id),
+        onPress: () =>
+          deletePlaceMutation.mutate(place.id, {
+            onError: (err: unknown) =>
+              Alert.alert('Error', getErrorMessage(err)),
+          }),
       },
     ]);
   };
@@ -169,8 +179,8 @@ export default function TripDetailsScreen() {
         note: editingNoteText.trim(),
       });
       setEditingPlace(null);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update note.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -185,8 +195,8 @@ export default function TripDetailsScreen() {
       setMemberModalVisible(false);
       setMemberEmail('');
       Alert.alert('Success', `Invited ${memberEmail} to join the trip.`);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add member.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -199,8 +209,8 @@ export default function TripDetailsScreen() {
         onPress: async () => {
           try {
             await removeMemberMutation.mutateAsync(memberUserId);
-          } catch (err: any) {
-            Alert.alert('Error', err?.response?.data?.message || 'Failed to remove member.');
+          } catch (err: unknown) {
+            Alert.alert('Error', getErrorMessage(err));
           }
         },
       },
@@ -218,29 +228,35 @@ export default function TripDetailsScreen() {
             await leaveTripMutation.mutateAsync();
             router.replace('/(tabs)');
           } catch (err: any) {
-            Alert.alert('Error', err?.response?.data?.message || 'Failed to leave trip.');
+            Alert.alert('Error', getErrorMessage(err));
           }
         },
       },
     ]);
   };
 
-  const handleLoadAiSuggestions = async () => {
+  const handleLoadAiSuggestions = async (forceRegenerate: boolean | unknown = false) => {
+    const shouldForce = forceRegenerate === true;
     setAiModalVisible(true);
-    if (aiSuggestions.length > 0) return;
+    if (aiSuggestions.length > 0 && !shouldForce) return;
 
     try {
       setLoadingAi(true);
       const res = await aiSuggestionsMutation.mutateAsync();
       setAiSuggestions(Array.isArray(res) ? res : (res as any)?.suggestions || []);
     } catch (err: any) {
-      Alert.alert('AI Guide Error', err?.response?.data?.message || 'Failed to generate suggestions. Please check your backend connection.');
+      Alert.alert('AI Guide Error', getErrorMessage(err));
     } finally {
       setLoadingAi(false);
     }
   };
 
   const handleAddAiSuggestionToTrip = async (sug: AiSuggestion) => {
+    const sugKey = sug.title || sug.name || '';
+    if (addedSuggestions.has(sugKey)) {
+      Alert.alert('Already Added', `"${sugKey}" is already in the itinerary.`);
+      return;
+    }
     try {
       const coords = await geocodePlace(sug.location || sug.title || sug.name || '', trip?.destination);
 
@@ -248,14 +264,15 @@ export default function TripDetailsScreen() {
         name: sug.title || sug.name || 'AI Activity',
         address: sug.location || trip?.destination || 'Destination Area',
         ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
-        dayNumber: (sug as any).dayNumber || 1,
+        dayNumber: sug.dayNumber || 1,
         category: sug.category || 'attraction',
         duration: sug.duration || 60,
         note: sug.description || '',
       });
+      setAddedSuggestions((prev) => new Set(prev).add(sugKey));
       Alert.alert('Added', `"${sug.title || sug.name}" added to itinerary!`);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -286,7 +303,12 @@ export default function TripDetailsScreen() {
     .map(Number)
     .sort((a, b) => a - b);
 
-  const totalExpenseSum = (expenses || []).reduce((acc: number, curr: Expense) => acc + (Number(curr.amount) || 0), 0);
+  // Sum only expenses matching trip currency for the overview stat
+  const totalExpenseSum = (expenses || []).reduce((acc: number, curr: Expense) => {
+    const expCurr = (curr.currency || trip.currency || 'USD').toUpperCase();
+    const tripCurr = (trip.currency || 'USD').toUpperCase();
+    return expCurr === tripCurr ? acc + (Number(curr.amount) || 0) : acc;
+  }, 0);
   const activeMembers = members || trip.members || [];
   const totalMemberCount = 1 + activeMembers.length;
 
@@ -315,13 +337,15 @@ export default function TripDetailsScreen() {
           {/* Quick Header Action Icons & Live Presence */}
           <View style={styles.headerFloatingActions}>
             <TripPresence activeMembers={socketMembers} />
-            <TouchableOpacity
-              style={styles.floatingActionBtn}
-              onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="create-outline" size={18} color="#FFFFFF" />
-            </TouchableOpacity>
+            {isOwner ? (
+              <TouchableOpacity
+                style={styles.floatingActionBtn}
+                onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.heroContent}>
@@ -381,7 +405,7 @@ export default function TripDetailsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.quickActionTitle}>Expenses & Debts</Text>
               <Text style={styles.quickActionSub}>
-                {trip.currency} {totalExpenseSum.toLocaleString()} spent
+                {expensesError ? 'Error loading expenses' : `${trip.currency} ${totalExpenseSum.toLocaleString()} spent`}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
@@ -485,7 +509,9 @@ export default function TripDetailsScreen() {
               </View>
             </View>
 
-            {placesLoading ? (
+            {placesError ? (
+              <ErrorState title="Failed to load stops" message="Could not fetch itinerary stops." onRetry={refetchPlaces} />
+            ) : placesLoading ? (
               <LoadingState message="Loading stops..." />
             ) : dayNumbers.length === 0 ? (
               <EmptyState
@@ -549,7 +575,7 @@ export default function TripDetailsScreen() {
               <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.detailLabel}>Duration</Text>
                 <Text style={styles.detailValue}>
-                  {Math.max(1, Math.ceil((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)))} days
+                  {calculateTripDays(trip.startDate, trip.endDate)} days
                 </Text>
               </View>
             </Card>
@@ -559,15 +585,20 @@ export default function TripDetailsScreen() {
               <Text style={styles.sectionHeading}>
                 Trip Members ({totalMemberCount})
               </Text>
-              <TouchableOpacity
-                style={styles.addMemberBtn}
-                onPress={() => setMemberModalVisible(true)}
-              >
-                <Ionicons name="person-add" size={14} color={Theme.colors.accent} />
-                <Text style={styles.addMemberBtnText}>Invite</Text>
-              </TouchableOpacity>
+              {isOwner ? (
+                <TouchableOpacity
+                  style={styles.addMemberBtn}
+                  onPress={() => setMemberModalVisible(true)}
+                >
+                  <Ionicons name="person-add" size={14} color={Theme.colors.accent} />
+                  <Text style={styles.addMemberBtnText}>Invite</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
+            {membersError ? (
+              <ErrorState title="Failed to load members" message="Could not fetch trip members." onRetry={refetchMembers} />
+            ) : (
             <Card style={styles.overviewCard}>
               {/* Trip Owner */}
               <View style={styles.memberRow}>
@@ -612,6 +643,7 @@ export default function TripDetailsScreen() {
                 );
               })}
             </Card>
+            )}
 
             {/* Leave Trip Option (for non-owners) */}
             {!isOwner && (
@@ -630,7 +662,7 @@ export default function TripDetailsScreen() {
       </ScrollView>
 
       {/* Add Place Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -710,7 +742,7 @@ export default function TripDetailsScreen() {
       </Modal>
 
       {/* Edit Place Note Modal */}
-      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent>
+      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent onRequestClose={() => setEditingPlace(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -752,7 +784,7 @@ export default function TripDetailsScreen() {
       </Modal>
 
       {/* Add Member Modal */}
-      <Modal visible={memberModalVisible} animationType="slide" transparent>
+      <Modal visible={memberModalVisible} animationType="slide" transparent onRequestClose={() => setMemberModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -795,7 +827,7 @@ export default function TripDetailsScreen() {
       </Modal>
 
       {/* AI Suggestions Modal */}
-      <Modal visible={aiModalVisible} animationType="slide" transparent>
+      <Modal visible={aiModalVisible} animationType="slide" transparent onRequestClose={() => setAiModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
@@ -830,7 +862,7 @@ export default function TripDetailsScreen() {
                 </Text>
                 <Button
                   title="Generate Suggestions"
-                  onPress={handleLoadAiSuggestions}
+                  onPress={() => handleLoadAiSuggestions(true)}
                   style={{ marginTop: 14 }}
                 />
               </View>

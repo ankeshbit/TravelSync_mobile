@@ -7,6 +7,17 @@ import { auth } from '@/config/firebase';
 import { getSocketBaseUrl } from '@/config/env';
 import { TRIP_KEYS } from './useTrips';
 
+const locallyDeletedTripIds = new Set<string>();
+
+export function markTripDeletedLocally(tripId: string) {
+  locallyDeletedTripIds.add(tripId);
+}
+
+export function isTripDeletedLocally(tripId: string): boolean {
+  return locallyDeletedTripIds.has(tripId);
+}
+
+
 export interface ActiveMember {
   userId: string;
   name: string;
@@ -191,7 +202,7 @@ export function useTripSocket(
     let hasExited = false;
 
     socketInstance.on('trip:deleted', () => {
-      if (hasExited) return;
+      if (hasExited || isTripDeletedLocally(tripId)) return;
       hasExited = true;
       Alert.alert('Trip Removed', 'This trip has been deleted by the owner.', [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },

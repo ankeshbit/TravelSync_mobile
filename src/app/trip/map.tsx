@@ -31,6 +31,7 @@ import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 import { geocodePlace } from '@/utils/geocoding';
 import { calculateTripDays, parseCalendarDate } from '@/utils/dateUtils';
+import { getErrorMessage } from '@/api/client';
 import { Place, AiSuggestion } from '@/types/trip';
 
 
@@ -48,10 +49,11 @@ export default function TripMapScreen() {
   const { id, tripId: paramTripId } = useLocalSearchParams<{ id?: string; tripId?: string }>();
   const tripId = id || paramTripId || '';
 
-  const { data: trip, isLoading: tripLoading } = useTrip(tripId);
+  const { data: trip, isLoading: tripLoading, isError: tripError, refetch: refetchTrip } = useTrip(tripId);
   const {
     data: places = [],
     isLoading: placesLoading,
+    isError: placesError,
     refetch: refetchPlaces,
     isRefetching,
   } = useTripPlaces(tripId);
@@ -156,7 +158,7 @@ export default function TripMapScreen() {
 
       setAddPlaceModalVisible(false);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -166,7 +168,10 @@ export default function TripMapScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => deletePlaceMutation.mutate(place.id),
+        onPress: () =>
+          deletePlaceMutation.mutate(place.id, {
+            onError: (err: unknown) => Alert.alert('Error', getErrorMessage(err)),
+          }),
       },
     ]);
   };
@@ -185,7 +190,7 @@ export default function TripMapScreen() {
       });
       setEditingPlace(null);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update note.');
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -248,7 +253,7 @@ export default function TripMapScreen() {
 
       Alert.alert('Added', `"${sug.title || sug.name}" added to Day ${activeDay}!`);
     } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to add place.');
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -256,8 +261,18 @@ export default function TripMapScreen() {
     return <LoadingState message="Loading itinerary and map..." fullscreen />;
   }
 
-  if (!trip) {
-    return <ErrorState title="Trip Not Found" message="Could not load itinerary for this trip." onRetry={refetchPlaces} fullscreen />;
+  if (tripError || placesError || !trip) {
+    return (
+      <ErrorState
+        title={tripError ? 'Trip Not Found' : 'Failed to Load Places'}
+        message="Could not load itinerary for this trip."
+        onRetry={() => {
+          if (tripError) refetchTrip();
+          if (placesError) refetchPlaces();
+        }}
+        fullscreen
+      />
+    );
   }
 
   return (
@@ -446,7 +461,7 @@ export default function TripMapScreen() {
       </ScrollView>
 
       {/* Add Place Modal */}
-      <Modal visible={addPlaceModalVisible} animationType="slide" transparent>
+      <Modal visible={addPlaceModalVisible} animationType="slide" transparent onRequestClose={() => setAddPlaceModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -528,7 +543,7 @@ export default function TripMapScreen() {
       </Modal>
 
       {/* Edit Note Modal */}
-      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent>
+      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent onRequestClose={() => setEditingPlace(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -570,7 +585,7 @@ export default function TripMapScreen() {
       </Modal>
 
       {/* AI Planner Modal matching AiPlannerModal.vue */}
-      <Modal visible={aiPlannerVisible} animationType="slide" transparent>
+      <Modal visible={aiPlannerVisible} animationType="slide" transparent onRequestClose={() => setAiPlannerVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>

@@ -22,10 +22,9 @@ export async function updateProfile(data: { name: string }): Promise<User> {
  * Upload a profile photo.
  */
 export async function uploadProfilePhoto(formData: FormData): Promise<{ picture: string }> {
+  // Do NOT set Content-Type manually – axios/RN must set the multipart boundary
   const response = await api.post<{ picture: string }>('/auth/upload-photo', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    timeout: 60000, // 60s for photo uploads
   });
   return response.data;
 }

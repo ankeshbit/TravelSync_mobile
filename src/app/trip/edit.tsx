@@ -12,6 +12,11 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUpdateTrip, useDeleteTrip } from '@/hooks/useTrips';
+import { markTripDeletedLocally } from '@/hooks/useTripSocket';
+import { DatePickerField } from '@/components/common/DatePickerField';
+import { validateTripForm, dateStringToISO } from '@/utils/tripValidation';
+
+import { getErrorMessage } from '@/api/client';
 import { useTrip } from '@/hooks/useTripDetails';
 import { useIsTripOwner } from '@/hooks/useIsTripOwner';
 import { Input } from '@/components/common/Input';
@@ -86,8 +91,9 @@ function EditTripForm({ trip }: { trip: Trip }) {
       Alert.alert('Required', 'Please enter a destination.');
       return;
     }
-    if (!startDate || !endDate) {
-      Alert.alert('Required', 'Please enter both start and end dates.');
+    const validation = validateTripForm({ name, destination, startDate, endDate, budget, currency });
+    if (!validation.valid) {
+      Alert.alert('Validation Error', validation.errors.join('\n'));
       return;
     }
 
@@ -95,19 +101,19 @@ function EditTripForm({ trip }: { trip: Trip }) {
       await updateTripMutation.mutateAsync({
         name: name.trim(),
         destination: destination.trim(),
-        startDate: new Date(startDate).toISOString(),
-        endDate: new Date(endDate).toISOString(),
-        budgetPerPerson: parseFloat(budget) || 0,
+        startDate: dateStringToISO(startDate),
+        endDate: dateStringToISO(endDate),
+        budgetPerPerson: budget.trim() !== '' ? parseFloat(budget) : 0,
         currency: currency.trim().toUpperCase() || 'INR',
         status,
-        coverImageUrl: coverImageUrl.trim() || undefined,
+        coverImageUrl: coverImageUrl.trim() !== '' ? coverImageUrl.trim() : undefined,
       });
 
       Alert.alert('Success', 'Trip updated successfully!', [
         { text: 'OK', onPress: () => router.back() },
       ]);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update trip.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err));
     }
   };
 
@@ -122,11 +128,12 @@ function EditTripForm({ trip }: { trip: Trip }) {
           style: 'destructive',
           onPress: async () => {
             try {
+              markTripDeletedLocally(trip.id);
               await deleteTripMutation.mutateAsync(trip.id);
               Alert.alert('Deleted', 'Trip deleted successfully.');
               router.replace('/(tabs)');
             } catch (err: any) {
-              Alert.alert('Error', err?.response?.data?.message || 'Failed to delete trip.');
+              Alert.alert('Error', getErrorMessage(err));
             }
           },
         },
@@ -163,20 +170,21 @@ function EditTripForm({ trip }: { trip: Trip }) {
         />
 
         <View style={styles.row}>
-          <Input
-            label="Start Date (YYYY-MM-DD)"
-            placeholder="2026-06-01"
-            value={startDate}
-            onChangeText={setStartDate}
-            containerStyle={{ flex: 1, marginRight: 8 }}
-          />
-          <Input
-            label="End Date (YYYY-MM-DD)"
-            placeholder="2026-06-10"
-            value={endDate}
-            onChangeText={setEndDate}
-            containerStyle={{ flex: 1, marginLeft: 8 }}
-          />
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <DatePickerField
+              label="Start Date"
+              value={startDate}
+              onChange={setStartDate}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <DatePickerField
+              label="End Date"
+              value={endDate}
+              onChange={setEndDate}
+              minimumDate={startDate ? new Date(startDate) : undefined}
+            />
+          </View>
         </View>
 
         <View style={styles.row}>

@@ -11,7 +11,8 @@
       "icon": "./assets/expo.icon",
       "config": {
         "googleMapsApiKey": ""
-      }
+      },
+      "bundleIdentifier": "com.travelsync.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +26,8 @@
         "googleMaps": {
           "apiKey": ""
         }
-      }
+      },
+      "package": "com.travelsync.mobile"
     },
     "web": {
       "output": "server",
@@ -46,7 +48,15 @@
         {
           "locationWhenInUsePermission": "TravelSync needs location access to geocode and plot itinerary stops on your map."
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TravelSync needs photo library access to update your profile picture.",
+          "cameraPermission": "TravelSync needs camera access to take profile photos."
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

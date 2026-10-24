@@ -63,10 +63,7 @@ export default function RegisterScreen() {
     setValidationError(null);
     setLoadingGoogle(true);
     try {
-      const user = await loginWithGoogle();
-      if (user) {
-        router.replace('/(tabs)');
-      }
+      await loginWithGoogle();
     } catch {
       // Error handled by AuthContext
     } finally {
