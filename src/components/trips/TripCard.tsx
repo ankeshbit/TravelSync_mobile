@@ -40,7 +40,7 @@ export function TripCard({ trip, onPress }: TripCardProps) {
           <Text style={styles.destination} numberOfLines={1}>{trip.destination}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
             <Text style={[styles.statusText, { color: statusColor.text }]}>
-              {trip.status.toUpperCase()}
+              {(trip.status ? trip.status.toUpperCase() : 'PLANNING')}
             </Text>
           </View>
         </View>
@@ -53,20 +53,24 @@ export function TripCard({ trip, onPress }: TripCardProps) {
         </View>
 
         <View style={styles.footer}>
-          <View style={styles.badge}>
-            <Ionicons name="people-outline" size={13} color={Theme.colors.accent} />
-            <Text style={styles.badgeText}>{membersCount} {membersCount === 1 ? 'member' : 'members'}</Text>
-          </View>
+          {Array.isArray(trip.members) ? (
+            <View style={styles.badge}>
+              <Ionicons name="people-outline" size={13} color={Theme.colors.accent} />
+              <Text style={styles.badgeText}>{membersCount} {membersCount === 1 ? 'member' : 'members'}</Text>
+            </View>
+          ) : null}
 
-          <View style={styles.badge}>
-            <Ionicons name="location-outline" size={13} color={Theme.colors.status.success} />
-            <Text style={styles.badgeText}>{placesCount} {placesCount === 1 ? 'stop' : 'stops'}</Text>
-          </View>
+          {Array.isArray(trip.places) ? (
+            <View style={styles.badge}>
+              <Ionicons name="location-outline" size={13} color={Theme.colors.status.success} />
+              <Text style={styles.badgeText}>{placesCount} {placesCount === 1 ? 'stop' : 'stops'}</Text>
+            </View>
+          ) : null}
 
-          {trip.budgetPerPerson > 0 ? (
+          {typeof trip.budgetPerPerson === 'number' && trip.budgetPerPerson > 0 ? (
             <View style={styles.badge}>
               <Ionicons name="cash-outline" size={13} color={Theme.colors.status.warning} />
-              <Text style={styles.badgeText}>{trip.currency} {trip.budgetPerPerson}</Text>
+              <Text style={styles.badgeText}>{trip.currency} {Number(trip.budgetPerPerson).toLocaleString()}</Text>
             </View>
           ) : null}
         </View>
