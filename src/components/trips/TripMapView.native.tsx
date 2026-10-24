@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { Place } from '@/types/trip';
 import { Theme } from '@/constants/theme';
@@ -19,7 +19,11 @@ export function TripMapView({
   placesWithCoords,
 }: TripMapViewProps) {
   const initialRegion = useMemo(() => {
-    if (placesWithCoords.length > 0 && typeof placesWithCoords[0].lat === 'number' && typeof placesWithCoords[0].lng === 'number') {
+    if (
+      placesWithCoords.length > 0 &&
+      typeof placesWithCoords[0].lat === 'number' &&
+      typeof placesWithCoords[0].lng === 'number'
+    ) {
       return {
         latitude: placesWithCoords[0].lat,
         longitude: placesWithCoords[0].lng,
@@ -33,6 +37,13 @@ export function TripMapView({
       latitudeDelta: 10,
       longitudeDelta: 10,
     };
+  }, [placesWithCoords]);
+
+  const polylineCoords = useMemo(() => {
+    return placesWithCoords.map((place) => ({
+      latitude: place.lat!,
+      longitude: place.lng!,
+    }));
   }, [placesWithCoords]);
 
   if (placesWithCoords.length === 0) {
@@ -52,6 +63,14 @@ export function TripMapView({
   return (
     <View style={styles.container}>
       <MapView style={styles.map} initialRegion={initialRegion}>
+        {polylineCoords.length > 1 && (
+          <Polyline
+            coordinates={polylineCoords}
+            strokeColor={Theme.colors.accent}
+            strokeWidth={3}
+            lineDashPattern={[0]}
+          />
+        )}
         {placesWithCoords.map((place, index) => (
           <Marker
             key={place.id || String(index)}
@@ -59,9 +78,13 @@ export function TripMapView({
               latitude: place.lat!,
               longitude: place.lng!,
             }}
-            title={place.name}
+            title={`${index + 1}. ${place.name}`}
             description={place.address || undefined}
-          />
+          >
+            <View style={styles.markerBadge}>
+              <Text style={styles.markerBadgeText}>{index + 1}</Text>
+            </View>
+          </Marker>
         ))}
       </MapView>
     </View>
@@ -96,5 +119,25 @@ const styles = StyleSheet.create({
     color: Theme.colors.textMuted,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  markerBadge: {
+    backgroundColor: Theme.colors.accent,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  markerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
