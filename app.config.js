@@ -1,6 +1,7 @@
 module.exports = ({ config }) => {
   return {
     ...config,
+    userInterfaceStyle: 'dark',
     ios: {
       ...config.ios,
       bundleIdentifier: 'com.travelsync.mobile',
