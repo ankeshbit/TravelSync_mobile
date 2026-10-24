@@ -268,7 +268,7 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
                               <TouchableOpacity
                                 key={optIdx}
                                 style={styles.optionPill}
-                                onPress={() => handleSend(`${q.field}: ${opt.label}`)}
+                                onPress={() => handleSend(opt.label, [{ field: q.field, value: opt.value, label: opt.label }])}
                               >
                                 <Text style={styles.optionPillText}>{opt.label}</Text>
                               </TouchableOpacity>
