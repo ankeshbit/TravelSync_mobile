@@ -48,11 +48,12 @@ export default function TripMapScreen() {
   const { id, tripId: paramTripId } = useLocalSearchParams<{ id?: string; tripId?: string }>();
   const tripId = id || paramTripId || '';
 
-  const { data: trip, isLoading: tripLoading, isError: tripError, refetch: refetchTrip } = useTrip(tripId);
+  const { data: trip, isLoading: tripLoading, isError: tripError, error: tripErrorObj, refetch: refetchTrip } = useTrip(tripId);
   const {
     data: places = [],
     isLoading: placesLoading,
     isError: placesError,
+    error: placesErrorObj,
     refetch: refetchPlaces,
     isRefetching,
   } = useTripPlaces(tripId);
@@ -260,15 +261,23 @@ export default function TripMapScreen() {
     return <LoadingState message="Loading itinerary and map..." fullscreen />;
   }
 
-  if (tripError || placesError || !trip) {
+  if (tripError || !trip) {
     return (
       <ErrorState
-        title={tripError ? 'Trip Not Found' : 'Failed to Load Places'}
-        message="Could not load itinerary for this trip."
-        onRetry={() => {
-          if (tripError) refetchTrip();
-          if (placesError) refetchPlaces();
-        }}
+        title="Failed to Load Trip"
+        message={getErrorMessage(tripErrorObj) || 'Could not load details for this trip.'}
+        onRetry={refetchTrip}
+        fullscreen
+      />
+    );
+  }
+
+  if (placesError) {
+    return (
+      <ErrorState
+        title="Failed to Load Places"
+        message={getErrorMessage(placesErrorObj) || 'Could not load itinerary places for this trip.'}
+        onRetry={refetchPlaces}
         fullscreen
       />
     );
