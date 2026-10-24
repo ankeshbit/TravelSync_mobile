@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Alert,
   RefreshControl,
   ActivityIndicator,
@@ -27,7 +26,7 @@ import { LoadingState } from '@/components/common/LoadingState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
-import { BrandLogo } from '@/components/common/BrandLogo';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Theme } from '@/constants/theme';
 import { geocodePlace } from '@/utils/geocoding';
 import { calculateTripDays, parseCalendarDate } from '@/utils/dateUtils';
@@ -461,213 +460,178 @@ export default function TripMapScreen() {
       </ScrollView>
 
       {/* Add Place Modal */}
-      <Modal visible={addPlaceModalVisible} animationType="slide" transparent onRequestClose={() => setAddPlaceModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Stop to Day {activeDay}</Text>
-              <TouchableOpacity onPress={() => setAddPlaceModalVisible(false)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+      <BottomSheetModal
+        visible={addPlaceModalVisible}
+        onClose={() => setAddPlaceModalVisible(false)}
+        title={`Add Stop to Day ${activeDay}`}
+      >
+        <Input
+          label="Place / Activity Name"
+          placeholder="e.g. Louvre Museum"
+          value={placeName}
+          onChangeText={setPlaceName}
+        />
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Input
-                label="Place / Activity Name"
-                placeholder="e.g. Louvre Museum"
-                value={placeName}
-                onChangeText={setPlaceName}
+        <Input
+          label="Address / Area"
+          placeholder="e.g. Rue de Rivoli, Paris"
+          value={placeAddress}
+          onChangeText={setPlaceAddress}
+        />
+
+        <Text style={styles.fieldLabel}>Category</Text>
+        <View style={styles.categoryPickerRow}>
+          {CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categoryChoice,
+                placeCategory === cat.id && styles.categoryChoiceActive,
+              ]}
+              onPress={() => setPlaceCategory(cat.id)}
+            >
+              <Ionicons
+                name={cat.icon as any}
+                size={14}
+                color={placeCategory === cat.id ? Theme.colors.accentText : Theme.colors.textMuted}
               />
-
-              <Input
-                label="Address / Area"
-                placeholder="e.g. Rue de Rivoli, Paris"
-                value={placeAddress}
-                onChangeText={setPlaceAddress}
-              />
-
-              <Text style={styles.fieldLabel}>Category</Text>
-              <View style={styles.categoryPickerRow}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.categoryChoice,
-                      placeCategory === cat.id && styles.categoryChoiceActive,
-                    ]}
-                    onPress={() => setPlaceCategory(cat.id)}
-                  >
-                    <Ionicons
-                      name={cat.icon as any}
-                      size={14}
-                      color={placeCategory === cat.id ? Theme.colors.accentText : Theme.colors.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.categoryChoiceText,
-                        placeCategory === cat.id && styles.categoryChoiceTextActive,
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Input
-                label="Notes / Tips (Optional)"
-                placeholder="Opening times, booking IDs, tips..."
-                value={placeNote}
-                onChangeText={setPlaceNote}
-                multiline
-                numberOfLines={3}
-              />
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancel"
-                  variant="outline"
-                  onPress={() => setAddPlaceModalVisible(false)}
-                  style={{ flex: 1, marginRight: 8 }}
-                />
-                <Button
-                  title="Save Place"
-                  onPress={handleSavePlace}
-                  isLoading={addPlaceMutation.isPending}
-                  style={{ flex: 1, marginLeft: 8 }}
-                />
-              </View>
-            </ScrollView>
-          </View>
+              <Text
+                style={[
+                  styles.categoryChoiceText,
+                  placeCategory === cat.id && styles.categoryChoiceTextActive,
+                ]}
+              >
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      </Modal>
+
+        <Input
+          label="Notes / Tips (Optional)"
+          placeholder="Opening times, booking IDs, tips..."
+          value={placeNote}
+          onChangeText={setPlaceNote}
+          multiline
+          numberOfLines={3}
+        />
+
+        <View style={styles.modalButtons}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={() => setAddPlaceModalVisible(false)}
+            style={{ flex: 1, marginRight: 8 }}
+          />
+          <Button
+            title="Save Place"
+            onPress={handleSavePlace}
+            isLoading={addPlaceMutation.isPending}
+            style={{ flex: 1, marginLeft: 8 }}
+          />
+        </View>
+      </BottomSheetModal>
 
       {/* Edit Note Modal */}
-      <Modal visible={Boolean(editingPlace)} animationType="slide" transparent onRequestClose={() => setEditingPlace(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Stop Note</Text>
-              <TouchableOpacity onPress={() => setEditingPlace(null)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+      <BottomSheetModal
+        visible={Boolean(editingPlace)}
+        onClose={() => setEditingPlace(null)}
+        title="Edit Stop Note"
+        subtitle={editingPlace?.name}
+      >
+        <Input
+          label="Stop Notes & Instructions"
+          placeholder="Add details, confirmations..."
+          value={editNoteText}
+          onChangeText={setEditNoteText}
+          multiline
+          numberOfLines={4}
+        />
 
-            <Text style={{ color: Theme.colors.accent, fontSize: 13, marginBottom: 14 }}>
-              {editingPlace?.name}
-            </Text>
-
-            <Input
-              label="Stop Notes & Instructions"
-              placeholder="Add details, confirmations..."
-              value={editNoteText}
-              onChangeText={setEditNoteText}
-              multiline
-              numberOfLines={4}
-            />
-
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancel"
-                variant="outline"
-                onPress={() => setEditingPlace(null)}
-                style={{ flex: 1, marginRight: 8 }}
-              />
-              <Button
-                title="Update Note"
-                onPress={handleSaveNote}
-                isLoading={updateNoteMutation.isPending}
-                style={{ flex: 1, marginLeft: 8 }}
-              />
-            </View>
-          </View>
+        <View style={styles.modalButtons}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={() => setEditingPlace(null)}
+            style={{ flex: 1, marginRight: 8 }}
+          />
+          <Button
+            title="Update Note"
+            onPress={handleSaveNote}
+            isLoading={updateNoteMutation.isPending}
+            style={{ flex: 1, marginLeft: 8 }}
+          />
         </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* AI Planner Modal matching AiPlannerModal.vue */}
-      <Modal visible={aiPlannerVisible} animationType="slide" transparent onRequestClose={() => setAiPlannerVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
-                <Text style={styles.modalTitle}>AI Itinerary Planner</Text>
-              </View>
-              <TouchableOpacity onPress={() => setAiPlannerVisible(false)}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: 12, color: Theme.colors.textMuted }}>
-                Generate structured stops for {trip.destination} powered by
-              </Text>
-              <BrandLogo size="xs" title="TravelSync AI" />
-            </View>
-
-            <View style={styles.aiFilterRow}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Budget Focus"
-                  placeholder="e.g. moderate, luxury, budget"
-                  value={aiBudget}
-                  onChangeText={setAiBudget}
-                />
-              </View>
-              <View style={{ flex: 1.5, marginLeft: 8 }}>
-                <Input
-                  label="Interests"
-                  placeholder="e.g. art, museums, food"
-                  value={aiInterests}
-                  onChangeText={setAiInterests}
-                />
-              </View>
-            </View>
-
-            <Button
-              title={aiLoading ? 'Generating Plan...' : 'Generate AI Suggestions'}
-              onPress={handleGenerateAiPlan}
-              isLoading={aiLoading}
-              icon={<Ionicons name="sparkles-outline" size={16} color={Theme.colors.accentText} />}
+      <BottomSheetModal
+        visible={aiPlannerVisible}
+        onClose={() => setAiPlannerVisible(false)}
+        title="AI Itinerary Planner"
+        subtitle={`Generate structured stops for ${trip.destination}`}
+      >
+        <View style={styles.aiFilterRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label="Budget Focus"
+              placeholder="e.g. moderate, luxury, budget"
+              value={aiBudget}
+              onChangeText={setAiBudget}
             />
-
-            <ScrollView style={{ marginTop: 14, maxHeight: 300 }}>
-              {aiLoading ? (
-                <View style={{ paddingVertical: 30, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={Theme.colors.accent} />
-                  <Text style={{ color: Theme.colors.textMuted, fontSize: 12, marginTop: 10 }}>
-                    Crafting personalized itinerary stops...
-                  </Text>
-                </View>
-              ) : aiSuggestions.length === 0 ? (
-                <Text style={{ textAlign: 'center', color: Theme.colors.textMuted, fontSize: 12, paddingVertical: 20 }}>
-                  Tap &quot;Generate AI Suggestions&quot; to review curated places for your trip.
-                </Text>
-              ) : (
-                aiSuggestions.map((sug, idx) => (
-                  <View key={idx} style={styles.aiSugItem}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.aiSugTitle}>{sug.title || sug.name}</Text>
-                      {sug.description ? (
-                        <Text style={styles.aiSugDesc}>{sug.description}</Text>
-                      ) : null}
-                      <Text style={styles.aiSugTag}>{sug.category || 'Spot'}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.addSugBtn}
-                      onPress={() => handleAddAiPlaceToDay(sug)}
-                    >
-                      <Ionicons name="add" size={14} color={Theme.colors.accentText} />
-                      <Text style={styles.addSugBtnText}>Add</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
-            </ScrollView>
+          </View>
+          <View style={{ flex: 1.5, marginLeft: 8 }}>
+            <Input
+              label="Interests"
+              placeholder="e.g. art, museums, food"
+              value={aiInterests}
+              onChangeText={setAiInterests}
+            />
           </View>
         </View>
-      </Modal>
+
+        <Button
+          title={aiLoading ? 'Generating Plan...' : 'Generate AI Suggestions'}
+          onPress={handleGenerateAiPlan}
+          isLoading={aiLoading}
+          icon={<Ionicons name="sparkles-outline" size={16} color={Theme.colors.accentText} />}
+        />
+
+        <ScrollView style={{ marginTop: 14, maxHeight: 300 }}>
+          {aiLoading ? (
+            <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Theme.colors.accent} />
+              <Text style={{ color: Theme.colors.textMuted, fontSize: 12, marginTop: 10 }}>
+                Crafting personalized itinerary stops...
+              </Text>
+            </View>
+          ) : aiSuggestions.length === 0 ? (
+            <Text style={{ textAlign: 'center', color: Theme.colors.textMuted, fontSize: 12, paddingVertical: 20 }}>
+              Tap &quot;Generate AI Suggestions&quot; to review curated places for your trip.
+            </Text>
+          ) : (
+            aiSuggestions.map((sug, idx) => (
+              <View key={idx} style={styles.aiSugItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.aiSugTitle}>{sug.title || sug.name}</Text>
+                  {sug.description ? (
+                    <Text style={styles.aiSugDesc}>{sug.description}</Text>
+                  ) : null}
+                  <Text style={styles.aiSugTag}>{sug.category || 'Spot'}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.addSugBtn}
+                  onPress={() => handleAddAiPlaceToDay(sug)}
+                >
+                  <Ionicons name="add" size={14} color={Theme.colors.accentText} />
+                  <Text style={styles.addSugBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </BottomSheetModal>
     </View>
   );
 }

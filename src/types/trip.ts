@@ -63,7 +63,7 @@ export interface Trip {
   startDate: string;
   endDate: string;
   status: TripStatus;
-  coverImageUrl?: string;
+  coverImageUrl?: string | null;
   budgetPerPerson: number;
   currency: string;
   ownerId: string;
@@ -105,7 +105,7 @@ export interface CreateTripDto {
   endDate: string;
   budgetPerPerson?: number;
   currency?: string;
-  coverImageUrl?: string;
+  coverImageUrl?: string | null;
 }
 
 export interface UpdateTripDto {
@@ -116,7 +116,7 @@ export interface UpdateTripDto {
   budgetPerPerson?: number;
   currency?: string;
   status?: TripStatus;
-  coverImageUrl?: string;
+  coverImageUrl?: string | null;
 }
 
 export interface CreatePlaceDto {

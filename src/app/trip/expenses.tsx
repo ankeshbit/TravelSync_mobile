@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   Alert,
   RefreshControl,
 } from 'react-native';
@@ -615,76 +614,65 @@ export default function TripExpensesScreen() {
       </BottomSheetModal>
 
       {/* Settle Up Modal */}
-      <Modal visible={settleModalVisible} animationType="slide" transparent onRequestClose={() => setSettleModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Settlement Plan</Text>
-                <Text style={styles.modalSubtitle}>Optimized debts for {activeCurrency}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setSettleModalVisible(false)}>
-                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 380 }}>
-              {settlements.length === 0 ? (
-                <View style={styles.emptySettlementBox}>
-                  <Ionicons name="checkmark-circle-outline" size={36} color={Theme.colors.status.success} />
-                  <Text style={styles.emptySettlementText}>All settled up! No outstanding balances.</Text>
-                </View>
-              ) : (
-                settlements.map((s, idx) => {
-                  const isUserSender = user?.id && s.from === user.id;
-                  const isUserReceiver = user?.id && s.to === user.id;
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.settleModalRow,
-                        isUserSender && styles.settleModalRowUserSender,
-                        isUserReceiver && styles.settleModalRowUserReceiver,
-                      ]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.settleRowTitle}>
-                          {isUserSender ? 'You' : s.fromName || 'Someone'}
-                          {' → '}
-                          {isUserReceiver ? 'You' : s.toName || 'Someone'}
-                        </Text>
-                        <Text style={styles.settleRowSubtitle}>
-                          {isUserSender
-                            ? 'You owe this amount'
-                            : isUserReceiver
-                            ? 'You receive this amount'
-                            : 'Peer settlement'}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.settleRowAmount,
-                          isUserSender && { color: Theme.colors.status.error },
-                          isUserReceiver && { color: Theme.colors.status.success },
-                        ]}
-                      >
-                        {activeCurrency} {Number(s.amount).toFixed(2)}
-                      </Text>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
-
-            <Button
-              title="Close"
-              variant="outline"
-              onPress={() => setSettleModalVisible(false)}
-              style={{ marginTop: 16 }}
-            />
+      <BottomSheetModal
+        visible={settleModalVisible}
+        onClose={() => setSettleModalVisible(false)}
+        title="Settlement Plan"
+        subtitle={`Optimized debts for ${activeCurrency}`}
+      >
+        {settlements.length === 0 ? (
+          <View style={styles.emptySettlementBox}>
+            <Ionicons name="checkmark-circle-outline" size={36} color={Theme.colors.status.success} />
+            <Text style={styles.emptySettlementText}>All settled up! No outstanding balances.</Text>
           </View>
-        </View>
-      </Modal>
+        ) : (
+          settlements.map((s, idx) => {
+            const isUserSender = user?.id && s.from === user.id;
+            const isUserReceiver = user?.id && s.to === user.id;
+            return (
+              <View
+                key={idx}
+                style={[
+                  styles.settleModalRow,
+                  isUserSender && styles.settleModalRowUserSender,
+                  isUserReceiver && styles.settleModalRowUserReceiver,
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settleRowTitle}>
+                    {isUserSender ? 'You' : s.fromName || 'Someone'}
+                    {' → '}
+                    {isUserReceiver ? 'You' : s.toName || 'Someone'}
+                  </Text>
+                  <Text style={styles.settleRowSubtitle}>
+                    {isUserSender
+                      ? 'You owe this amount'
+                      : isUserReceiver
+                      ? 'You receive this amount'
+                      : 'Peer settlement'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.settleRowAmount,
+                    isUserSender && { color: Theme.colors.status.error },
+                    isUserReceiver && { color: Theme.colors.status.success },
+                  ]}
+                >
+                  {s.currency || activeCurrency} {Number(s.amount).toFixed(2)}
+                </Text>
+              </View>
+            );
+          })
+        )}
+
+        <Button
+          title="Close"
+          variant="outline"
+          onPress={() => setSettleModalVisible(false)}
+          style={{ marginTop: 16 }}
+        />
+      </BottomSheetModal>
     </View>
   );
 }

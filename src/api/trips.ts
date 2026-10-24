@@ -222,10 +222,24 @@ export async function getExploreDestinations(q?: string): Promise<ExploreDestina
 /**
  * Send a chat message to the TravelSync AI recommendation assistant.
  */
-export async function chatWithAiGuide(message: string, previousPreferences?: Record<string, any>): Promise<AiChatResponse> {
-  const response = await api.post<AiChatResponse>('/recommendations/chat', {
+export interface StructuredAnswer {
+  field: string;
+  value: any;
+  label?: string;
+}
+
+export async function chatWithAiGuide(
+  message: string,
+  previousPreferences?: Record<string, any>,
+  structuredAnswers?: StructuredAnswer[]
+): Promise<AiChatResponse> {
+  const payload: Record<string, any> = {
     message: message.trim(),
     previous_preferences: previousPreferences || null,
-  });
+  };
+  if (structuredAnswers && structuredAnswers.length > 0) {
+    payload.structured_answers = structuredAnswers;
+  }
+  const response = await api.post<AiChatResponse>('/recommendations/chat', payload);
   return response.data;
 }

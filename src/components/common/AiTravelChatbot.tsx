@@ -69,7 +69,7 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages, loading]);
 
-  const handleSend = async (textToSend?: string) => {
+  const handleSend = async (textToSend?: string, structuredAnswers?: { field: string; value: any; label?: string }[]) => {
     const query = (textToSend || input).trim();
     if (!query || loading) return;
 
@@ -86,7 +86,7 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
     const thisAbort = abortRef.current;
 
     try {
-      const res = await chatWithAiGuide(query, extractedPrefsRef.current);
+      const res = await chatWithAiGuide(query, extractedPrefsRef.current, structuredAnswers);
 
       if (thisAbort.aborted) return; // discard stale response
 

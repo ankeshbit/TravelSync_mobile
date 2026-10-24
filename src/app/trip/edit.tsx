@@ -106,7 +106,7 @@ function EditTripForm({ trip }: { trip: Trip }) {
         budgetPerPerson: budget.trim() !== '' ? parseFloat(budget) : 0,
         currency: currency.trim().toUpperCase() || 'INR',
         status,
-        coverImageUrl: coverImageUrl.trim() !== '' ? coverImageUrl.trim() : undefined,
+        coverImageUrl: coverImageUrl.trim() !== '' ? coverImageUrl.trim() : null,
       });
 
       Alert.alert('Success', 'Trip updated successfully!', [

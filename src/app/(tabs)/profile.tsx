@@ -6,7 +6,6 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
-  Modal,
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -19,6 +18,7 @@ import { auth } from '@/config/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { getApiBaseUrl } from '@/config/env';
 import { Button } from '@/components/common/Button';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Card } from '@/components/common/Card';
 import { Input } from '@/components/common/Input';
 import { BrandLogo } from '@/components/common/BrandLogo';
@@ -636,56 +636,43 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Delete OTP Verification Modal */}
-      <Modal visible={deleteModalVisible} animationType="slide" transparent onRequestClose={closeDeleteModal}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="warning-outline" size={22} color={Theme.colors.status.error} />
-                <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
-              </View>
-              <TouchableOpacity onPress={closeDeleteModal}>
-                <Ionicons name="close" size={22} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              Please enter the 6-digit verification code sent to <Text style={{ color: Theme.colors.accent }}>{email}</Text>.
-            </Text>
-
-            {__DEV__ && devOtp ? (
-              <View style={styles.devOtpBanner}>
-                <Text style={styles.devOtpTitle}>DEV OTP Code (Development Server):</Text>
-                <Text style={styles.devOtpCode}>{devOtp}</Text>
-              </View>
-            ) : null}
-
-            <Input
-              label="6-Digit OTP Code"
-              placeholder="e.g. 123456"
-              value={otpCode}
-              onChangeText={setOtpCode}
-              keyboardType="number-pad"
-              maxLength={6}
-              leftIcon={<Ionicons name="key-outline" size={18} color={Theme.colors.textMuted} />}
-            />
-
-            <View style={{ gap: 10, marginTop: 8 }}>
-              <Button
-                title="Permanently Delete My Account"
-                variant="danger"
-                onPress={handleConfirmDelete}
-                isLoading={isDeleting}
-              />
-              <Button
-                title="Cancel"
-                variant="outline"
-                onPress={closeDeleteModal}
-              />
-            </View>
+      <BottomSheetModal
+        visible={deleteModalVisible}
+        onClose={closeDeleteModal}
+        title="Confirm Account Deletion"
+        subtitle={`Please enter the 6-digit verification code sent to ${email}`}
+      >
+        {__DEV__ && devOtp ? (
+          <View style={styles.devOtpBanner}>
+            <Text style={styles.devOtpTitle}>DEV OTP Code (Development Server):</Text>
+            <Text style={styles.devOtpCode}>{devOtp}</Text>
           </View>
+        ) : null}
+
+        <Input
+          label="6-Digit OTP Code"
+          placeholder="e.g. 123456"
+          value={otpCode}
+          onChangeText={setOtpCode}
+          keyboardType="number-pad"
+          maxLength={6}
+          leftIcon={<Ionicons name="key-outline" size={18} color={Theme.colors.textMuted} />}
+        />
+
+        <View style={{ gap: 10, marginTop: 8 }}>
+          <Button
+            title="Permanently Delete My Account"
+            variant="danger"
+            onPress={handleConfirmDelete}
+            isLoading={isDeleting}
+          />
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={closeDeleteModal}
+          />
         </View>
-      </Modal>
+      </BottomSheetModal>
     </View>
   );
 }

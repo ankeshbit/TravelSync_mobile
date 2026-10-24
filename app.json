@@ -9,9 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "config": {
-        "googleMapsApiKey": ""
-      },
+      "config": {},
       "bundleIdentifier": "com.travelsync.mobile"
     },
     "android": {
@@ -23,9 +21,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "config": {
-        "googleMaps": {
-          "apiKey": ""
-        }
+        "googleMaps": {}
       },
       "package": "com.travelsync.mobile"
     },

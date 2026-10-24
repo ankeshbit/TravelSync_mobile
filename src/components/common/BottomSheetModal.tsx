@@ -17,6 +17,7 @@ interface BottomSheetModalProps {
   visible: boolean;
   onClose: () => void;
   title?: string;
+  subtitle?: string;
   children: React.ReactNode;
   maxHeight?: DimensionValue;
   rightAction?: React.ReactNode;
@@ -26,6 +27,7 @@ export function BottomSheetModal({
   visible,
   onClose,
   title,
+  subtitle,
   children,
   maxHeight = '88%',
   rightAction,
@@ -49,9 +51,16 @@ export function BottomSheetModal({
         <View style={[styles.sheet, { maxHeight }]}>
           {title ? (
             <View style={styles.header}>
-              <Text style={styles.title} numberOfLines={1}>
-                {title}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {title}
+                </Text>
+                {subtitle ? (
+                  <Text style={styles.subtitle} numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                ) : null}
+              </View>
               <View style={styles.headerActions}>
                 {rightAction}
                 <TouchableOpacity
@@ -115,7 +124,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Theme.colors.textPrimary,
-    flex: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: Theme.colors.textMuted,
+    marginTop: 2,
   },
   scrollContent: {
     paddingBottom: 12,

@@ -7,8 +7,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Modal,
-} from 'react-native';
+  } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,6 +21,7 @@ import {
 } from '@/services/offlineStorage';
 import { Card } from '@/components/common/Card';
 import { Button } from '@/components/common/Button';
+import { BottomSheetModal } from '@/components/common/BottomSheetModal';
 import { Input } from '@/components/common/Input';
 import { EmptyState } from '@/components/common/EmptyState';
 import { LoadingState } from '@/components/common/LoadingState';
@@ -504,35 +504,23 @@ export default function OfflineTripScreen() {
         </ScrollView>
 
         {/* Edit Note Modal */}
-        <Modal
+        <BottomSheetModal
           visible={noteModalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setNoteModalVisible(false)}
+          onClose={() => setNoteModalVisible(false)}
+          title="Offline Place Note"
+          subtitle={selectedPlace?.name}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Offline Place Note</Text>
-                <TouchableOpacity onPress={() => setNoteModalVisible(false)}>
-                  <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
-                </TouchableOpacity>
-              </View>
+          <Input
+            label="Note"
+            placeholder="Enter notes, opening hours, confirmation codes..."
+            value={noteText}
+            onChangeText={setNoteText}
+            multiline
+            numberOfLines={4}
+          />
 
-              <Text style={styles.modalPlaceName}>{selectedPlace?.name}</Text>
-              <Input
-                label="Note"
-                placeholder="Enter notes, opening hours, confirmation codes..."
-                value={noteText}
-                onChangeText={setNoteText}
-                multiline
-                numberOfLines={4}
-              />
-
-              <Button title="Save Offline Note" onPress={handleSaveNote} style={{ marginTop: 12 }} />
-            </View>
-          </View>
-        </Modal>
+          <Button title="Save Offline Note" onPress={handleSaveNote} style={{ marginTop: 12 }} />
+        </BottomSheetModal>
       </View>
     );
   }
