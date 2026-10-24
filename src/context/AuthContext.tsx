@@ -216,7 +216,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
-      await logoutBackend().catch(() => {});
+      // Best-effort non-blocking backend session cleanup
+      logoutBackend().catch(() => {});
       await firebaseSignOut(auth);
       setFirebaseUser(null);
       setUser(null);
@@ -287,3 +288,4 @@ function getFirebaseErrorMessage(error: any): string {
       return error?.message || 'Authentication failed. Please try again.';
   }
 }
+

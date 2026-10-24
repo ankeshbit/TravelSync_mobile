@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -221,6 +221,12 @@ export default function ProfileScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!isLoading && !firebaseUser) {
+      router.replace('/(auth)/login');
+    }
+  }, [firebaseUser, isLoading, router]);
+
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out from TravelSync Mobile?', [
       { text: 'Cancel', style: 'cancel' },
@@ -228,8 +234,13 @@ export default function ProfileScreen() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
-          await logout();
-          router.replace('/(auth)/login');
+          try {
+            await logout();
+          } catch (e) {
+            console.error('Logout error:', e);
+          } finally {
+            router.replace('/(auth)/login');
+          }
         },
       },
     ]);
@@ -945,3 +956,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
