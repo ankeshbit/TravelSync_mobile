@@ -237,8 +237,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
-      // Best-effort non-blocking backend session cleanup
-      logoutBackend().catch(() => {});
+      // Await backend logout with ~2s timeout BEFORE firebaseSignOut so token is still valid
+      try {
+        await Promise.race([
+          logoutBackend(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+        ]);
+      } catch {
+        // Ignore backend logout network failures or timeouts
+      }
+
       await firebaseSignOut(auth);
       setFirebaseUser(null);
       setUser(null);
