@@ -386,7 +386,7 @@ export default function TripDetailsScreen() {
             onPress={() => router.push({ pathname: '/trip/offline', params: { tripId: id } })}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(217, 119, 6, 0.15)' }]}>
-              <Ionicons name="cloud-offline-outline" size={20} color="#D97706" />
+              <Ionicons name="cloud-offline-outline" size={20} color={Theme.colors.status.warning} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.quickActionTitle}>Offline Companion</Text>
@@ -937,7 +937,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   heroMetaText: {
-    color: '#D5D3CA',
+    color: Theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '500',
   },

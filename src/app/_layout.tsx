@@ -65,7 +65,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
             {this.state.error?.message || 'An unexpected error occurred while rendering the view.'}
           </Text>
           <TouchableOpacity style={styles.retryButton} onPress={this.handleRetry} activeOpacity={0.8}>
-            <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+            <Ionicons name="refresh-outline" size={18} color={Theme.colors.accentText} />
             <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -85,7 +85,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
         {error?.message || 'An unexpected error occurred while loading this screen.'}
       </Text>
       <TouchableOpacity style={styles.retryButton} onPress={retry} activeOpacity={0.8}>
-        <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+        <Ionicons name="refresh-outline" size={18} color={Theme.colors.accentText} />
         <Text style={styles.retryButtonText}>Try Again</Text>
       </TouchableOpacity>
     </View>
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   retryButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accentText,
     fontWeight: '600',
     fontSize: 15,
   },

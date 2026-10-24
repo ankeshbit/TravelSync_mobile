@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#22231F',
+    backgroundColor: Theme.colors.surfaceElevated,
     borderWidth: 1.5,
     borderColor: Theme.colors.status.success,
     alignItems: 'center',
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#D5D3CA',
+    color: Theme.colors.textSecondary,
   },
   overflowAvatar: {
     backgroundColor: Theme.colors.surface,
