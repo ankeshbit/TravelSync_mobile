@@ -124,9 +124,15 @@ export default function OfflineTripScreen() {
     try {
       const response = await syncOfflineChanges(tripId, pendingQueue);
 
-      // Defensively clear acknowledged items if partial response, or entire queue
-      const ackedIds = response?.acknowledgedIds || response?.syncedIds;
-      await offlineStorage.clearPendingSyncQueue(storageUserId, tripId, ackedIds);
+      // Extract successfully acknowledged change IDs from backend response
+      const results = (response?.results as { id: string; success: boolean }[]) || [];
+      const ackedIds = Array.isArray(results) && results.length > 0
+        ? results.filter((r) => r.success).map((r) => r.id)
+        : (response?.acknowledgedIds || response?.syncedIds || []);
+
+      if (ackedIds.length > 0) {
+        await offlineStorage.clearPendingSyncQueue(storageUserId, tripId, ackedIds);
+      }
 
       // Invalidate live React Query keys for places and details
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
@@ -134,7 +140,15 @@ export default function OfflineTripScreen() {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
 
       setRefreshKey((k) => k + 1);
-      Alert.alert('Synchronized', 'Pending offline changes have been saved to the server!');
+
+      if (response?.failedCount && Number(response.failedCount) > 0) {
+        Alert.alert(
+          'Partial Sync',
+          `${response.syncedCount || 0} change(s) saved, but ${response.failedCount} failed to sync. Failed items remain queued for retry.`
+        );
+      } else {
+        Alert.alert('Synchronized', 'Pending offline changes have been saved to the server!');
+      }
     } catch (err: unknown) {
       Alert.alert('Sync Error', getErrorMessage(err) || 'Failed to sync changes with server.');
     } finally {

@@ -52,7 +52,7 @@ export default function RegisterScreen() {
 
     try {
       await registerWithEmail(name, email, password);
-      router.replace('/(tabs)');
+      router.replace('/(auth)/verify-email?justSent=true');
     } catch {
       // Error handled by AuthContext
     }

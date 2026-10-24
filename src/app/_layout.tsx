@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { Theme } from '@/constants/theme';
+import { BrandLogo } from '@/components/common/BrandLogo';
 
 // Prevent native splash screen from hiding automatically until Auth is initialized
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -118,6 +119,7 @@ function NavigationStack() {
         options={{
           title: 'Trip Details',
           headerBackTitle: 'Back',
+          headerRight: () => <BrandLogo size="xs" showText={false} />,
         }}
       />
       <Stack.Screen

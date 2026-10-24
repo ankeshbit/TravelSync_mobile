@@ -58,11 +58,11 @@ export default function ProfileScreen() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(user?.picture || null);
 
-  const [syncedUserId, setSyncedUserId] = useState<string | null>(null);
-  if (user?.id && user.id !== syncedUserId) {
-    setSyncedUserId(user.id);
-    setName(user.name || firebaseUser?.displayName || '');
-    setProfilePicture(user.picture || null);
+  const [prevUserId, setPrevUserId] = useState(user?.id);
+  if (user?.id !== prevUserId) {
+    setPrevUserId(user?.id);
+    setName(user?.name || firebaseUser?.displayName || '');
+    setProfilePicture(user?.picture || null);
   }
 
   // Preferences & Notifications State (persisted per uid)

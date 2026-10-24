@@ -30,7 +30,11 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (firebaseUser) {
-      router.replace('/(tabs)');
+      if (firebaseUser.emailVerified) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/verify-email');
+      }
     }
   }, [firebaseUser, router]);
 

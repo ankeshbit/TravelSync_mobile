@@ -277,7 +277,8 @@ export const offlineStorage = {
   async queuePendingSync(userId: string, tripId: string, item: PendingSyncItem): Promise<void> {
     const key = PENDING_SYNC_KEY(userId, tripId);
     await withKeyLock(key, async () => {
-      const queue = await this.getPendingSyncQueue(userId, tripId);
+      const data = await AsyncStorage.getItem(key);
+      const queue: PendingSyncItem[] = data ? JSON.parse(data) : [];
       queue.push(item);
       await AsyncStorage.setItem(key, JSON.stringify(queue));
     });
@@ -308,7 +309,8 @@ export const offlineStorage = {
     await withKeyLock(key, async () => {
       try {
         if (acknowledgedIds && Array.isArray(acknowledgedIds) && acknowledgedIds.length > 0) {
-          const queue = await this.getPendingSyncQueue(userId, tripId);
+          const data = await AsyncStorage.getItem(key);
+          const queue: PendingSyncItem[] = data ? JSON.parse(data) : [];
           const remaining = queue.filter((item) => !acknowledgedIds.includes(item.id));
           await AsyncStorage.setItem(key, JSON.stringify(remaining));
         } else {

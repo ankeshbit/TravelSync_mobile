@@ -196,7 +196,17 @@ export async function getOfflineTripPack(tripId: string): Promise<OfflineTripPac
  * Sync offline batch changes to backend.
  */
 export async function syncOfflineChanges(tripId: string, changes: OfflineChangeItem[]): Promise<OfflineSyncResult> {
-  const response = await api.post(`/trips/${tripId}/offline-sync`, { changes });
+  // Flatten payload fields (placeId, note, etc.) to root level to match backend offlineSyncItemSchema
+  const formattedChanges = changes.map((c) => ({
+    id: c.id,
+    type: c.type,
+    placeId: (c.payload as any)?.placeId || (c as any).placeId,
+    itemId: (c.payload as any)?.placeId || (c as any).placeId || (c as any).itemId,
+    note: (c.payload as any)?.note !== undefined ? (c.payload as any).note : (c as any).note,
+    content: (c.payload as any)?.note !== undefined ? (c.payload as any).note : (c as any).content,
+    modifiedAt: c.timestamp,
+  }));
+  const response = await api.post(`/trips/${tripId}/offline-sync`, { changes: formattedChanges });
   return response.data;
 }
 
