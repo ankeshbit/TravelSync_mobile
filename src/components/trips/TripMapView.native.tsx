@@ -50,7 +50,7 @@ export function TripMapView({
     return (
       <View style={styles.emptyMapContainer}>
         <Ionicons name="map-outline" size={32} color={Theme.colors.accent} />
-        <Text style={styles.mapTitle}>Day ${activeDay} Map</Text>
+        <Text style={styles.mapTitle}>Day {activeDay} Map</Text>
         <Text style={styles.mapSubtitle}>
           {places.length > 0
             ? `${places.length} stop(s) added. Add street addresses to plot pins on the map.`
