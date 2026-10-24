@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser: FirebaseUser | null) => {
       const currentUid = fbUser?.uid || null;
       if (prevUidRef.current !== null && prevUidRef.current !== currentUid) {
         queryClient.clear();
@@ -83,16 +83,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setFirebaseUser(fbUser);
 
-      if (fbUser) {
-        if (!isRegisteringRef.current) {
-          await syncBackendUser();
-        }
-      } else {
+      if (!fbUser) {
         setUser(null);
         queryClient.clear();
       }
 
       setIsInitializing(false);
+
+      if (fbUser && !isRegisteringRef.current) {
+        syncBackendUser().catch((err) => {
+          console.warn('[AuthContext] syncBackendUser non-blocking sync error:', err);
+        });
+      }
     });
 
     return () => unsubscribe();
