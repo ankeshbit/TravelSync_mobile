@@ -132,7 +132,7 @@ function EditTripForm({ trip }: { trip: Trip }) {
               await deleteTripMutation.mutateAsync(trip.id);
               Alert.alert('Deleted', 'Trip deleted successfully.');
               router.replace('/(tabs)');
-            } catch (err: any) {
+            } catch (err: unknown) {
               Alert.alert('Error', getErrorMessage(err));
             }
           },

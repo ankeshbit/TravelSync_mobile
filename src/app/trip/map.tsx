@@ -156,7 +156,7 @@ export default function TripMapScreen() {
       });
 
       setAddPlaceModalVisible(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
     }
   };
@@ -188,7 +188,7 @@ export default function TripMapScreen() {
         note: editNoteText.trim(),
       });
       setEditingPlace(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
     }
   };
@@ -209,8 +209,8 @@ export default function TripMapScreen() {
 
     try {
       await reorderPlacesMutation.mutateAsync(updates);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to reorder places.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to reorder places.');
     }
   };
 
@@ -225,8 +225,8 @@ export default function TripMapScreen() {
       });
       const list = Array.isArray(res) ? res : (res as any)?.suggestions || [];
       setAiSuggestions(list);
-    } catch (err: any) {
-      Alert.alert('AI Guide Error', err?.response?.data?.message || 'Failed to generate itinerary suggestions.');
+    } catch (err: unknown) {
+      Alert.alert('AI Guide Error', getErrorMessage(err) || 'Failed to generate itinerary suggestions.');
     } finally {
       setAiLoading(false);
     }
@@ -251,7 +251,7 @@ export default function TripMapScreen() {
       });
 
       Alert.alert('Added', `"${sug.title || sug.name}" added to Day ${activeDay}!`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
     }
   };

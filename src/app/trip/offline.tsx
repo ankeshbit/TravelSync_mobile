@@ -108,7 +108,7 @@ export default function OfflineTripScreen() {
           ? 'Offline pack refreshed with latest server data. Any pending offline notes have been preserved.'
           : 'Trip pack saved locally! You can now access full details offline in airplane mode.'
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         isRefresh ? 'Refresh Failed' : 'Download Failed',
         getErrorMessage(err) || 'Could not fetch offline pack. Check your connection.'
@@ -135,7 +135,7 @@ export default function OfflineTripScreen() {
 
       setRefreshKey((k) => k + 1);
       Alert.alert('Synchronized', 'Pending offline changes have been saved to the server!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Sync Error', getErrorMessage(err) || 'Failed to sync changes with server.');
     } finally {
       setSyncing(false);

@@ -227,7 +227,7 @@ export default function TripDetailsScreen() {
           try {
             await leaveTripMutation.mutateAsync();
             router.replace('/(tabs)');
-          } catch (err: any) {
+          } catch (err: unknown) {
             Alert.alert('Error', getErrorMessage(err));
           }
         },
@@ -244,7 +244,7 @@ export default function TripDetailsScreen() {
       setLoadingAi(true);
       const res = await aiSuggestionsMutation.mutateAsync();
       setAiSuggestions(Array.isArray(res) ? res : (res as any)?.suggestions || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('AI Guide Error', getErrorMessage(err));
     } finally {
       setLoadingAi(false);
@@ -271,7 +271,7 @@ export default function TripDetailsScreen() {
       });
       setAddedSuggestions((prev) => new Set(prev).add(sugKey));
       Alert.alert('Added', `"${sug.title || sug.name}" added to itinerary!`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
     }
   };

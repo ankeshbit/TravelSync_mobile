@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/api/client';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -109,8 +110,8 @@ export default function VerifyEmailScreen() {
           'Please check your email inbox and tap the link to verify your account.'
         );
       }
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to check verification status.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to check verification status.');
     } finally {
       setChecking(false);
     }
@@ -124,8 +125,8 @@ export default function VerifyEmailScreen() {
       await sendEmailVerification(auth.currentUser);
       startCooldown(60);
       Alert.alert('Email Sent', 'A fresh verification link has been sent to your inbox.');
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to resend verification email.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to resend verification email.');
     } finally {
       setSending(false);
     }

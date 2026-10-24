@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@/api/client';
 import React, { useState } from 'react';
 import {
   Text,
@@ -80,8 +81,8 @@ export default function CreateTripScreen() {
           onPress: () => router.replace({ pathname: '/trip/[id]', params: { id: newTrip.id } }),
         },
       ]);
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to create trip. Please try again.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to create trip. Please try again.');
     }
   };
 

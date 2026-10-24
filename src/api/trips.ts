@@ -144,10 +144,50 @@ export async function reorderTripPlaces(
   return response.data;
 }
 
+
+export interface OfflineChangeItem {
+  id: string;
+  tripId: string;
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface OfflineSyncResult {
+  synced?: string[];
+  failed?: string[];
+  acknowledgedIds?: string[];
+  syncedIds?: string[];
+  errors?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface OfflineTripPack {
+  trip: {
+    id: string;
+    name: string;
+    destination: string;
+    startDate: string;
+    endDate: string;
+    currency: string;
+    coverImageUrl?: string | null;
+    status: string;
+    ownerId: string;
+    budgetPerPerson?: number;
+  };
+  itinerary?: unknown[];
+  places?: unknown[];
+  staysAndTransport?: unknown[];
+  documents?: unknown[];
+  emergencyContacts?: unknown[];
+  notes?: unknown[];
+  checklist?: unknown[];
+}
+
 /**
  * Fetch full offline pack for a trip (metadata, itinerary, expenses, checklist, notes).
  */
-export async function getOfflineTripPack(tripId: string): Promise<any> {
+export async function getOfflineTripPack(tripId: string): Promise<OfflineTripPack> {
   const response = await api.get(`/trips/${tripId}/offline-pack`);
   return response.data;
 }
@@ -155,7 +195,7 @@ export async function getOfflineTripPack(tripId: string): Promise<any> {
 /**
  * Sync offline batch changes to backend.
  */
-export async function syncOfflineChanges(tripId: string, changes: any[]): Promise<any> {
+export async function syncOfflineChanges(tripId: string, changes: OfflineChangeItem[]): Promise<OfflineSyncResult> {
   const response = await api.post(`/trips/${tripId}/offline-sync`, { changes });
   return response.data;
 }

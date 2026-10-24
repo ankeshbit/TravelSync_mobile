@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -134,8 +135,8 @@ export default function ProfileScreen() {
       await updateProfile({ name: name.trim() });
       await syncBackendUser();
       Alert.alert('Success', 'Profile name updated successfully.');
-    } catch (err: any) {
-      Alert.alert('Error', err?.response?.data?.message || 'Failed to update profile name.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to update profile name.');
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -181,7 +182,7 @@ export default function ProfileScreen() {
       }
       await syncBackendUser();
       Alert.alert('Success', 'Profile photo updated successfully!');
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert('Upload Error', getErrorMessage(err));
     } finally {
       setIsUploadingPhoto(false);
@@ -199,8 +200,8 @@ export default function ProfileScreen() {
       setIsSendingReset(true);
       await sendPasswordResetEmail(auth, email);
       Alert.alert('Reset Link Sent', `Password reset instructions sent to ${email}`);
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to send password reset email.');
+    } catch (err: unknown) {
+      Alert.alert('Error', getErrorMessage(err) || 'Failed to send password reset email.');
     } finally {
       setIsSendingReset(false);
     }
@@ -231,8 +232,8 @@ export default function ProfileScreen() {
                 setDevOtp(null);
               }
               setDeleteModalVisible(true);
-            } catch (err: any) {
-              Alert.alert('Error', err?.response?.data?.message || 'Failed to send OTP verification code.');
+            } catch (err: unknown) {
+              Alert.alert('Error', getErrorMessage(err) || 'Failed to send OTP verification code.');
             } finally {
               setIsSendingOtp(false);
             }
@@ -255,16 +256,18 @@ export default function ProfileScreen() {
       await logout();
       Alert.alert('Account Deleted', 'Your TravelSync account has been permanently removed.');
       router.replace('/(auth)/login');
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 409 Conflict: user owns shared trips
-      if (err?.response?.status === 409 || err?.response?.data?.code === 'OWNS_SHARED_TRIPS') {
-        const tripNames = err.response.data?.trips?.join(', ') || 'one or more shared trips';
+      const axiosErr = isAxiosError(err) ? err : null;
+      const respData = axiosErr?.response?.data as { code?: string; trips?: string[]; message?: string } | undefined;
+      if (axiosErr?.response?.status === 409 || respData?.code === 'OWNS_SHARED_TRIPS') {
+        const tripNames = respData?.trips?.join(', ') || 'one or more shared trips';
         Alert.alert(
           'Cannot Delete Account',
           `You are the owner of shared trips (${tripNames}). Please delete these trips or transfer ownership to another member before deleting your account.`
         );
       } else {
-        Alert.alert('Deletion Failed', err?.response?.data?.message || 'Invalid or expired OTP code.');
+        Alert.alert('Deletion Failed', getErrorMessage(err) || 'Invalid or expired OTP code.');
       }
     } finally {
       setIsDeleting(false);

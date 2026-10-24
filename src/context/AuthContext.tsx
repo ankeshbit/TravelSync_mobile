@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
@@ -60,8 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const dbUser = await getCurrentUser();
       setUser(dbUser);
       return dbUser;
-    } catch (err: any) {
-      if (err?.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
+    } catch (err: unknown) {
+      const axiosErr = isAxiosError(err) ? err : null;
+      const respData = axiosErr?.response?.data as { code?: string } | undefined;
+      if (respData?.code === 'EMAIL_NOT_VERIFIED') {
         setError('Please verify your email address to access your trips.');
       } else {
         console.warn('[AuthContext] Backend sync warning:', getErrorMessage(err));
@@ -102,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
       setFirebaseUser(cred.user);
       await syncBackendUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const friendlyMessage = getFirebaseErrorMessage(err);
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
@@ -186,12 +189,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await syncBackendUser();
 
       return userCredential.user;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const fbErr = err as { code?: string; message?: string } | undefined;
       if (
-        err?.code === 'auth/popup-closed-by-user' ||
-        err?.code === 'auth/cancelled-popup-request' ||
-        err?.message?.toLowerCase().includes('cancel') ||
-        err?.message?.toLowerCase().includes('dismiss')
+        fbErr?.code === 'auth/popup-closed-by-user' ||
+        fbErr?.code === 'auth/cancelled-popup-request' ||
+        fbErr?.message?.toLowerCase().includes('cancel') ||
+        fbErr?.message?.toLowerCase().includes('dismiss')
       ) {
         return null; // User cancelled, no error banner needed
       }
@@ -220,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setFirebaseUser(cred.user);
       await syncBackendUser();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const friendlyMessage = getFirebaseErrorMessage(err);
       setError(friendlyMessage);
       throw new Error(friendlyMessage);
@@ -240,7 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setError(null);
       queryClient.clear();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
