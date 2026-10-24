@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native';
+import { Alert, AlertButton, AlertOptions, Platform } from 'react-native';
 
 /**
  * Polyfills Alert.alert for React Native Web where Alert.alert is an empty no-op.
@@ -6,9 +6,10 @@ import { Alert, Platform } from 'react-native';
  */
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
   Alert.alert = (
-    title?: string,
-    message?: string,
-    buttons?: Array<{ text?: string; onPress?: () => void; style?: string }>
+    title?: string | null,
+    message?: string | null,
+    buttons?: AlertButton[],
+    _options?: AlertOptions
   ) => {
     const fullMessage = [title, message].filter(Boolean).join('\n\n');
 
