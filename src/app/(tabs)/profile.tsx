@@ -244,7 +244,7 @@ export default function ProfileScreen() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!/^d{6}$/.test(otpCode.trim())) {
+    if (!/^\d{6}$/.test(otpCode.trim())) {
       Alert.alert('Invalid Code', 'Please enter a valid 6-digit numeric verification code.');
       return;
     }
