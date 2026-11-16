@@ -158,8 +158,130 @@ export interface OfflineSyncResult {
   failed?: string[];
   acknowledgedIds?: string[];
   syncedIds?: string[];
+  failedIds?: string[];
+  results?: { id: string; success?: boolean; synced?: boolean; failed?: boolean; error?: string }[];
+  syncedCount?: number;
+  failedCount?: number;
   errors?: Record<string, string>;
   [key: string]: unknown;
+}
+
+export interface NormalizedSyncResult {
+  syncedIds: string[];
+  failedIds: string[];
+  syncedCount: number;
+  failedCount: number;
+  isFullSuccess: boolean;
+  isPartialSuccess: boolean;
+  isFullFailure: boolean;
+  errors?: Record<string, string>;
+}
+
+/**
+ * Normalizes disparate sync API response formats into a single predictable contract.
+ * Deduplicates IDs, distinguishes full/partial/complete failures, and retains failed items.
+ */
+export function normalizeSyncResult(
+  data: unknown,
+  submittedQueue: { id: string }[] = []
+): NormalizedSyncResult {
+  const syncedSet = new Set<string>();
+  const failedSet = new Set<string>();
+  const errors: Record<string, string> = {};
+
+  if (data && typeof data === 'object') {
+    const raw = data as Record<string, unknown>;
+
+    // 1. Detailed results array: e.g. [{ id: '1', success: true, error: '...' }]
+    if (Array.isArray(raw.results)) {
+      for (const item of raw.results) {
+        if (item && typeof item === 'object') {
+          const id = String((item as any).id || (item as any).itemId || '').trim();
+          if (id) {
+            if ((item as any).success === true || (item as any).synced === true) {
+              syncedSet.add(id);
+            } else if ((item as any).success === false || (item as any).failed === true || (item as any).error) {
+              failedSet.add(id);
+              if ((item as any).error) {
+                errors[id] = String((item as any).error);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 2. ID arrays: acknowledgedIds, syncedIds, synced, processed
+    const idArrays = [raw.acknowledgedIds, raw.syncedIds, raw.synced, raw.processed];
+    for (const arr of idArrays) {
+      if (Array.isArray(arr)) {
+        for (const id of arr) {
+          if (typeof id === 'string' && id.trim()) {
+            syncedSet.add(id.trim());
+          }
+        }
+      }
+    }
+
+    // 3. Failed ID arrays: failedIds, failed
+    const failedArrays = [raw.failedIds, raw.failed];
+    for (const arr of failedArrays) {
+      if (Array.isArray(arr)) {
+        for (const id of arr) {
+          if (typeof id === 'string' && id.trim()) {
+            failedSet.add(id.trim());
+          }
+        }
+      }
+    }
+
+    // 4. Errors dictionary: { [id: string]: string }
+    if (raw.errors && typeof raw.errors === 'object' && !Array.isArray(raw.errors)) {
+      for (const [id, msg] of Object.entries(raw.errors)) {
+        failedSet.add(id);
+        errors[id] = String(msg);
+      }
+    }
+
+    // 5. If raw.success === true and no specific synced/failed IDs were provided, but all submitted items were accepted
+    if (raw.success === true && syncedSet.size === 0 && failedSet.size === 0 && submittedQueue.length > 0) {
+      for (const item of submittedQueue) {
+        if (item.id) syncedSet.add(item.id);
+      }
+    }
+  }
+
+  // Deduplicate and ensure no ID is in both synced and failed
+  for (const syncedId of syncedSet) {
+    failedSet.delete(syncedId);
+  }
+
+  // If there are partial acknowledgements, any unacknowledged submitted items are marked failed/unresolved
+  if (syncedSet.size > 0 && submittedQueue.length > 0) {
+    for (const item of submittedQueue) {
+      if (!syncedSet.has(item.id) && !failedSet.has(item.id)) {
+        failedSet.add(item.id);
+      }
+    }
+  }
+
+  const syncedIds = Array.from(syncedSet);
+  const failedIds = Array.from(failedSet);
+
+  const isFullSuccess = syncedIds.length > 0 && failedIds.length === 0;
+  const isPartialSuccess = syncedIds.length > 0 && failedIds.length > 0;
+  const isFullFailure = syncedIds.length === 0 && (failedIds.length > 0 || submittedQueue.length > 0);
+
+  return {
+    syncedIds,
+    failedIds,
+    syncedCount: syncedIds.length,
+    failedCount: failedIds.length,
+    isFullSuccess,
+    isPartialSuccess,
+    isFullFailure,
+    errors: Object.keys(errors).length > 0 ? errors : undefined,
+  };
 }
 
 export interface OfflineTripPack {

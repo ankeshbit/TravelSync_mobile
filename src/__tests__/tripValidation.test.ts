@@ -48,6 +48,15 @@ describe('validateTripForm', () => {
   it('fails negative budget', () => {
     expect(validateTripForm({ ...valid, budget: '-100' }).valid).toBe(false);
   });
+  it('fails malformed budget values', () => {
+    expect(validateTripForm({ ...valid, budget: '1,2,3' }).valid).toBe(false);
+    expect(validateTripForm({ ...valid, budget: 'abc123' }).valid).toBe(false);
+    expect(validateTripForm({ ...valid, budget: '12..50' }).valid).toBe(false);
+  });
+  it('accepts valid formatted budget', () => {
+    expect(validateTripForm({ ...valid, budget: '12,500' }).valid).toBe(true);
+    expect(validateTripForm({ ...valid, budget: '1,000.50' }).valid).toBe(true);
+  });
 });
 
 describe('buildDefaultDates', () => {

@@ -30,22 +30,28 @@ export default function VerifyEmailScreen() {
   const [checking, setChecking] = useState(false);
   const [sending, setSending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(params.justSent === 'true' ? 60 : 0);
-  const cooldownRef = useRef<any>(null);
+  const isMountedRef = useRef(true);
+  const isCheckingRef = useRef(false);
 
-  const startCooldown = (seconds: number) => {
-    setResendCooldown(seconds);
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
-    cooldownRef.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Cooldown countdown timer (isolated from verification polling)
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+
+    const timer = setTimeout(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
-  };
 
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  // Verification polling effect (runs at a consistent 5-second interval)
   useEffect(() => {
     // If not signed in at all, go to login
     if (!auth.currentUser) {
@@ -58,37 +64,36 @@ export default function VerifyEmailScreen() {
       return;
     }
 
-    if (resendCooldown > 0) {
-      cooldownRef.current = setInterval(() => {
-        setResendCooldown((prev) => {
-          if (prev <= 1) {
-            clearInterval(cooldownRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    let isPolling = true;
 
-    // Auto-poll verification status every 5 seconds
-    const pollInterval = setInterval(async () => {
+    const checkVerificationStatus = async () => {
+      if (!isPolling || !isMountedRef.current || isCheckingRef.current) return;
+      isCheckingRef.current = true;
       try {
         if (auth.currentUser) {
           await auth.currentUser.reload();
-          if (auth.currentUser.emailVerified) {
+          if (auth.currentUser.emailVerified && isMountedRef.current && isPolling) {
+            isPolling = false;
             await auth.currentUser.getIdToken(true);
             await syncBackendUser();
             router.replace('/(tabs)');
           }
         }
-      } catch {}
-    }, 5000);
+      } catch (err) {
+        // Network or reload failures during background polling are handled gracefully
+        console.warn('[verify-email] Background polling check warning:', err);
+      } finally {
+        isCheckingRef.current = false;
+      }
+    };
+
+    const pollInterval = setInterval(checkVerificationStatus, 5000);
 
     return () => {
-      if (cooldownRef.current) clearInterval(cooldownRef.current);
+      isPolling = false;
       clearInterval(pollInterval);
     };
-  }, [router, syncBackendUser, resendCooldown]);
+  }, [router, syncBackendUser]);
 
   const handleCheckVerification = async () => {
     if (!auth.currentUser) {
@@ -96,39 +101,56 @@ export default function VerifyEmailScreen() {
       return;
     }
 
+    if (isCheckingRef.current) return;
+    isCheckingRef.current = true;
     setChecking(true);
     try {
       await auth.currentUser.reload();
       if (auth.currentUser.emailVerified) {
         await auth.currentUser.getIdToken(true);
         await syncBackendUser();
-        Alert.alert('Verified!', 'Your email has been verified. Welcome to TravelSync!');
-        router.replace('/(tabs)');
+        if (isMountedRef.current) {
+          Alert.alert('Verified!', 'Your email has been verified. Welcome to TravelSync!');
+          router.replace('/(tabs)');
+        }
       } else {
-        Alert.alert(
-          'Not Verified Yet',
-          'Please check your email inbox and tap the link to verify your account.'
-        );
+        if (isMountedRef.current) {
+          Alert.alert(
+            'Not Verified Yet',
+            'Please check your email inbox and tap the link to verify your account.'
+          );
+        }
       }
     } catch (err: unknown) {
-      Alert.alert('Error', getErrorMessage(err) || 'Failed to check verification status.');
+      if (isMountedRef.current) {
+        Alert.alert('Error', getErrorMessage(err) || 'Failed to check verification status.');
+      }
     } finally {
-      setChecking(false);
+      isCheckingRef.current = false;
+      if (isMountedRef.current) {
+        setChecking(false);
+      }
     }
   };
 
   const handleResend = async () => {
-    if (!auth.currentUser || resendCooldown > 0) return;
+    if (!auth.currentUser || resendCooldown > 0 || sending) return;
 
     setSending(true);
     try {
       await sendEmailVerification(auth.currentUser);
-      startCooldown(60);
-      Alert.alert('Email Sent', 'A fresh verification link has been sent to your inbox.');
+      if (isMountedRef.current) {
+        setResendCooldown(60);
+        Alert.alert('Email Sent', 'A fresh verification link has been sent to your inbox.');
+      }
     } catch (err: unknown) {
-      Alert.alert('Error', getErrorMessage(err) || 'Failed to resend verification email.');
+      if (isMountedRef.current) {
+        Alert.alert('Error', getErrorMessage(err) || 'Failed to resend verification email.');
+      }
     } finally {
-      setSending(false);
+      if (isMountedRef.current) {
+        setSending(false);
+      }
     }
   };
 

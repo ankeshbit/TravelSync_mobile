@@ -48,7 +48,8 @@ export async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise
   keyLocks.set(key, nextLock);
 
   try {
-    await currentLock;
+    // Wait for previous lock even if it threw an error
+    await currentLock.catch(() => {});
     return await fn();
   } finally {
     release!();
@@ -56,6 +57,54 @@ export async function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise
       keyLocks.delete(key);
     }
   }
+}
+
+/**
+ * Internal unlocked helpers to read/write storage without acquiring locks.
+ * Used by locked public methods and composite operations to prevent nested lock deadlocks.
+ */
+async function readTripBundleUnlocked(userId: string, tripId: string): Promise<OfflineTripBundle | null> {
+  if (!userId || !tripId) return null;
+  try {
+    const data = await AsyncStorage.getItem(TRIP_BUNDLE_KEY(userId, tripId));
+    return data ? JSON.parse(data) : null;
+  } catch (err) {
+    console.error('Failed to get offline trip bundle:', err);
+    return null;
+  }
+}
+
+async function writeTripBundleUnlocked(userId: string, tripId: string, bundle: OfflineTripBundle): Promise<void> {
+  await AsyncStorage.setItem(TRIP_BUNDLE_KEY(userId, tripId), JSON.stringify(bundle));
+}
+
+async function readTripsUnlocked(userId: string): Promise<OfflineTripSummary[]> {
+  if (!userId) return [];
+  try {
+    const data = await AsyncStorage.getItem(TRIPS_LIST_KEY(userId));
+    return data ? JSON.parse(data) : [];
+  } catch (err) {
+    console.error('Failed to get offline trips:', err);
+    return [];
+  }
+}
+
+async function writeTripsUnlocked(userId: string, trips: OfflineTripSummary[]): Promise<void> {
+  await AsyncStorage.setItem(TRIPS_LIST_KEY(userId), JSON.stringify(trips));
+}
+
+async function readQueueUnlocked(userId: string, tripId: string): Promise<PendingSyncItem[]> {
+  if (!userId || !tripId) return [];
+  try {
+    const data = await AsyncStorage.getItem(PENDING_SYNC_KEY(userId, tripId));
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeQueueUnlocked(userId: string, tripId: string, queue: PendingSyncItem[]): Promise<void> {
+  await AsyncStorage.setItem(PENDING_SYNC_KEY(userId, tripId), JSON.stringify(queue));
 }
 
 export const offlineStorage = {
@@ -119,15 +168,7 @@ export const offlineStorage = {
   async getOfflineTrips(userId: string): Promise<OfflineTripSummary[]> {
     if (!userId) return [];
     const key = TRIPS_LIST_KEY(userId);
-    return withKeyLock(key, async () => {
-      try {
-        const data = await AsyncStorage.getItem(key);
-        return data ? JSON.parse(data) : [];
-      } catch (err) {
-        console.error('Failed to get offline trips:', err);
-        return [];
-      }
-    });
+    return withKeyLock(key, () => readTripsUnlocked(userId));
   },
 
   /**
@@ -136,15 +177,7 @@ export const offlineStorage = {
   async getOfflineTripBundle(userId: string, tripId: string): Promise<OfflineTripBundle | null> {
     if (!userId || !tripId) return null;
     const key = TRIP_BUNDLE_KEY(userId, tripId);
-    return withKeyLock(key, async () => {
-      try {
-        const data = await AsyncStorage.getItem(key);
-        return data ? JSON.parse(data) : null;
-      } catch (err) {
-        console.error('Failed to get offline trip bundle:', err);
-        return null;
-      }
-    });
+    return withKeyLock(key, () => readTripBundleUnlocked(userId, tripId));
   },
 
   /**
@@ -159,7 +192,7 @@ export const offlineStorage = {
 
     await withKeyLock(key, async () => {
       const downloadedAt = new Date().toISOString();
-      const existingQueue = await this.getPendingSyncQueue(userId, tripId);
+      const existingQueue = await readQueueUnlocked(userId, tripId);
 
       const itinerary = [...(pack.itinerary || pack.places || [])];
 
@@ -198,18 +231,20 @@ export const offlineStorage = {
       };
 
       // Save bundle
-      await AsyncStorage.setItem(key, JSON.stringify(bundle));
+      await writeTripBundleUnlocked(userId, tripId, bundle);
 
       // Update index list
       const tripsKey = TRIPS_LIST_KEY(userId);
-      const trips = await this.getOfflineTrips(userId);
-      const existingIndex = trips.findIndex((t) => t.tripId === tripId);
-      if (existingIndex >= 0) {
-        trips[existingIndex] = summary;
-      } else {
-        trips.unshift(summary);
-      }
-      await AsyncStorage.setItem(tripsKey, JSON.stringify(trips));
+      await withKeyLock(tripsKey, async () => {
+        const trips = await readTripsUnlocked(userId);
+        const existingIndex = trips.findIndex((t) => t.tripId === tripId);
+        if (existingIndex >= 0) {
+          trips[existingIndex] = summary;
+        } else {
+          trips.unshift(summary);
+        }
+        await writeTripsUnlocked(userId, trips);
+      });
     });
   },
 
@@ -227,9 +262,11 @@ export const offlineStorage = {
         await AsyncStorage.removeItem(bundleKey);
         await AsyncStorage.removeItem(syncKey);
 
-        const trips = await this.getOfflineTrips(userId);
-        const updated = trips.filter((t) => t.tripId !== tripId);
-        await AsyncStorage.setItem(tripsKey, JSON.stringify(updated));
+        await withKeyLock(tripsKey, async () => {
+          const trips = await readTripsUnlocked(userId);
+          const updated = trips.filter((t) => t.tripId !== tripId);
+          await writeTripsUnlocked(userId, updated);
+        });
       } catch (err) {
         console.error('Failed to delete offline trip:', err);
       }
@@ -246,17 +283,18 @@ export const offlineStorage = {
 
     return withKeyLock(key, async () => {
       try {
-        const bundle = await this.getOfflineTripBundle(userId, tripId);
+        const bundle = await readTripBundleUnlocked(userId, tripId);
         if (!bundle || !Array.isArray(bundle.itinerary)) return false;
 
         const place = bundle.itinerary.find((p: any) => p && p.id === placeId);
         if (!place) return false;
 
         place.note = note;
-        await AsyncStorage.setItem(key, JSON.stringify(bundle));
+        await writeTripBundleUnlocked(userId, tripId, bundle);
 
+        const uniqueSuffix = Math.random().toString(36).substring(2, 8);
         await this.queuePendingSync(userId, tripId, {
-          id: `${placeId}_note_${Date.now()}`,
+          id: `${placeId}_note_${Date.now()}_${uniqueSuffix}`,
           tripId,
           type: 'place_note',
           payload: { placeId, note },
@@ -277,10 +315,9 @@ export const offlineStorage = {
   async queuePendingSync(userId: string, tripId: string, item: PendingSyncItem): Promise<void> {
     const key = PENDING_SYNC_KEY(userId, tripId);
     await withKeyLock(key, async () => {
-      const data = await AsyncStorage.getItem(key);
-      const queue: PendingSyncItem[] = data ? JSON.parse(data) : [];
+      const queue = await readQueueUnlocked(userId, tripId);
       queue.push(item);
-      await AsyncStorage.setItem(key, JSON.stringify(queue));
+      await writeQueueUnlocked(userId, tripId, queue);
     });
   },
 
@@ -290,14 +327,7 @@ export const offlineStorage = {
   async getPendingSyncQueue(userId: string, tripId: string): Promise<PendingSyncItem[]> {
     if (!userId || !tripId) return [];
     const key = PENDING_SYNC_KEY(userId, tripId);
-    return withKeyLock(key, async () => {
-      try {
-        const data = await AsyncStorage.getItem(key);
-        return data ? JSON.parse(data) : [];
-      } catch {
-        return [];
-      }
-    });
+    return withKeyLock(key, () => readQueueUnlocked(userId, tripId));
   },
 
   /**
@@ -309,10 +339,9 @@ export const offlineStorage = {
     await withKeyLock(key, async () => {
       try {
         if (acknowledgedIds && Array.isArray(acknowledgedIds) && acknowledgedIds.length > 0) {
-          const data = await AsyncStorage.getItem(key);
-          const queue: PendingSyncItem[] = data ? JSON.parse(data) : [];
+          const queue = await readQueueUnlocked(userId, tripId);
           const remaining = queue.filter((item) => !acknowledgedIds.includes(item.id));
-          await AsyncStorage.setItem(key, JSON.stringify(remaining));
+          await writeQueueUnlocked(userId, tripId, remaining);
         } else {
           await AsyncStorage.removeItem(key);
         }

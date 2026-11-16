@@ -120,6 +120,7 @@ function NavigationStack() {
           title: 'Trip Details',
           headerBackTitle: 'Back',
           headerRight: () => <BrandLogo size="xs" showText={false} />,
+          headerShadowVisible: true,
         }}
       />
       <Stack.Screen

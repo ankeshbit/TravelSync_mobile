@@ -3,6 +3,8 @@
  * All date parsing is timezone-safe (YYYY-MM-DD → local calendar date, no UTC shift).
  */
 
+import { parseAmount } from './money';
+
 export interface TripFormData {
   name?: string;
   destination?: string;
@@ -82,9 +84,11 @@ export function validateTripForm(data: TripFormData): ValidationResult {
     errors.push('End date must be on or after start date.');
   }
 
-  const budgetNum = typeof data.budget === 'number' ? data.budget : parseFloat(String(data.budget || '0'));
-  if (data.budget !== undefined && data.budget !== '' && (isNaN(budgetNum) || budgetNum < 0)) {
-    errors.push('Budget must be a non-negative number.');
+  if (data.budget !== undefined && String(data.budget).trim() !== '') {
+    const budgetNum = parseAmount(data.budget);
+    if (budgetNum === null || budgetNum < 0) {
+      errors.push('Budget must be a non-negative number.');
+    }
   }
 
   if (data.currency !== undefined) {

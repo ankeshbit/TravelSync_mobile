@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -42,10 +43,35 @@ import { Place, Expense, AiSuggestion } from '@/types/trip';
 import { Theme } from '@/constants/theme';
 import { useTripSocket } from '@/hooks/useTripSocket';
 import { TripPresence } from '@/components/trips/TripPresence';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 
 export default function TripDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { preferences: userPreferences } = useUserPreferences();
+  const { width: windowWidth } = useWindowDimensions();
+
+  // Responsive column count for feature cards: 4 columns on wide (>=860), 2 columns on medium/tablet (>=400), 1 column on narrow mobile (<400)
+  const numFeatureColumns = useMemo(() => {
+    if (windowWidth >= 860) return 4;
+    if (windowWidth >= 400) return 2;
+    return 1;
+  }, [windowWidth]);
+
+  const featureCardGap = 10;
+  const horizontalPadding = 16 * 2;
+  const availableFeatureWidth = windowWidth - horizontalPadding;
+
+  const featureCardWidth = useMemo(() => {
+    if (numFeatureColumns === 4) {
+      return (availableFeatureWidth - (3 * featureCardGap)) / 4;
+    }
+    if (numFeatureColumns === 2) {
+      return (availableFeatureWidth - featureCardGap) / 2;
+    }
+    return availableFeatureWidth;
+  }, [numFeatureColumns, availableFeatureWidth, featureCardGap]);
+
   // useIsTripOwner handles user authorization checks
 
   const [activeTab, setActiveTab] = useState<'itinerary' | 'overview'>('itinerary');
@@ -312,10 +338,14 @@ export default function TripDetailsScreen() {
   const activeMembers = filterTripMembers(members || trip.members, trip.ownerId);
   const totalMemberCount = getTripMemberCount(members || trip.members, trip.ownerId);
 
+  const hasCoverImage = Boolean(trip.coverImageUrl && trip.coverImageUrl.trim() !== '');
+
   return (
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
@@ -325,31 +355,70 @@ export default function TripDetailsScreen() {
           />
         }
       >
-        {/* Hero Banner with Cover Photo */}
-        <View style={styles.heroContainer}>
-          {trip.coverImageUrl ? (
-            <Image source={{ uri: trip.coverImageUrl }} style={styles.heroImage} contentFit="cover" />
-          ) : (
-            <View style={[styles.heroImage, styles.heroPlaceholder]} />
-          )}
-          <View style={styles.heroOverlay} />
+        {/* Hero Section: Render cover image banner if available, or compact header if no image */}
+        {hasCoverImage ? (
+          <View style={styles.heroContainerWithCover}>
+            <Image
+              source={{ uri: trip.coverImageUrl! }}
+              style={styles.heroImage}
+              contentFit="cover"
+            />
+            <View style={styles.heroOverlay} />
 
-          {/* Quick Header Action Icons & Live Presence */}
-          <View style={styles.headerFloatingActions}>
-            <TripPresence activeMembers={socketMembers} />
-            {isOwner ? (
-              <TouchableOpacity
-                style={styles.floatingActionBtn}
-                onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="create-outline" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : null}
+            {/* Quick Header Action Icons & Live Presence */}
+            <View style={styles.headerFloatingActions}>
+              {userPreferences.notifyLiveActivity ? (
+                <TripPresence activeMembers={socketMembers} />
+              ) : null}
+              {isOwner ? (
+                <TouchableOpacity
+                  style={styles.floatingActionBtn}
+                  onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <View style={styles.heroContent}>
+              <Text style={styles.tripName}>{trip.name}</Text>
+              <View style={styles.heroMetaRow}>
+                <View style={styles.heroMetaItem}>
+                  <Ionicons name="location" size={14} color={Theme.colors.accent} />
+                  <Text style={styles.heroMetaText} numberOfLines={1}>{trip.destination}</Text>
+                </View>
+                <View style={styles.heroMetaItem}>
+                  <Ionicons name="calendar-outline" size={14} color={Theme.colors.textSecondary} />
+                  <Text style={styles.heroMetaText}>
+                    {formatDateRange(trip.startDate, trip.endDate)}
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
+        ) : (
+          <View style={styles.heroContainerNoCover}>
+            <View style={styles.heroHeaderTopRow}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.tripName}>{trip.name}</Text>
+              </View>
+              <View style={styles.heroActionsInline}>
+                {userPreferences.notifyLiveActivity ? (
+                  <TripPresence activeMembers={socketMembers} />
+                ) : null}
+                {isOwner ? (
+                  <TouchableOpacity
+                    style={styles.floatingActionBtn}
+                    onPress={() => router.push({ pathname: '/trip/edit', params: { id } })}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
 
-          <View style={styles.heroContent}>
-            <Text style={styles.tripName}>{trip.name}</Text>
             <View style={styles.heroMetaRow}>
               <View style={styles.heroMetaItem}>
                 <Ionicons name="location" size={14} color={Theme.colors.accent} />
@@ -363,66 +432,104 @@ export default function TripDetailsScreen() {
               </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Quick Actions Row */}
         <View style={styles.quickActionsBar}>
           <TouchableOpacity
-            style={styles.quickActionCard}
+            style={[
+              styles.quickActionCard,
+              {
+                width: featureCardWidth,
+                minHeight: numFeatureColumns === 1 ? 64 : 74,
+              },
+            ]}
             onPress={() => router.push({ pathname: '/trip/map', params: { tripId: id } })}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(167, 169, 154, 0.15)' }]}>
               <Ionicons name="map-outline" size={20} color={Theme.colors.accent} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>Map & Planner</Text>
-              <Text style={styles.quickActionSub}>Day-by-day routes</Text>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={styles.quickActionTitle} numberOfLines={2}>
+                Map & Planner
+              </Text>
+              <Text style={styles.quickActionSub} numberOfLines={1}>
+                Day-by-day routes
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} style={styles.quickActionChevron} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.quickActionCard}
+            style={[
+              styles.quickActionCard,
+              {
+                width: featureCardWidth,
+                minHeight: numFeatureColumns === 1 ? 64 : 74,
+              },
+            ]}
             onPress={() => router.push({ pathname: '/trip/offline', params: { tripId: id } })}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(217, 119, 6, 0.15)' }]}>
               <Ionicons name="cloud-offline-outline" size={20} color={Theme.colors.status.warning} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>Offline Companion</Text>
-              <Text style={styles.quickActionSub}>Airplane mode ready</Text>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={styles.quickActionTitle} numberOfLines={2}>
+                Offline Companion
+              </Text>
+              <Text style={styles.quickActionSub} numberOfLines={1}>
+                Airplane mode ready
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} style={styles.quickActionChevron} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.quickActionCard}
+            style={[
+              styles.quickActionCard,
+              {
+                width: featureCardWidth,
+                minHeight: numFeatureColumns === 1 ? 64 : 74,
+              },
+            ]}
             onPress={() => router.push({ pathname: '/trip/expenses', params: { tripId: id } })}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(134, 169, 139, 0.15)' }]}>
               <Ionicons name="wallet-outline" size={20} color={Theme.colors.status.success} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>Expenses & Debts</Text>
-              <Text style={styles.quickActionSub}>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={styles.quickActionTitle} numberOfLines={2}>
+                Expenses & Debts
+              </Text>
+              <Text style={styles.quickActionSub} numberOfLines={1}>
                 {expensesError ? 'Error loading expenses' : `${trip.currency} ${totalExpenseSum.toLocaleString()} spent`}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} style={styles.quickActionChevron} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.quickActionCard}
+            style={[
+              styles.quickActionCard,
+              {
+                width: featureCardWidth,
+                minHeight: numFeatureColumns === 1 ? 64 : 74,
+              },
+            ]}
             onPress={handleLoadAiSuggestions}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: 'rgba(167, 169, 154, 0.15)' }]}>
               <Ionicons name="sparkles" size={20} color={Theme.colors.accent} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>AI Travel Guide</Text>
-              <Text style={styles.quickActionSub}>Smart suggestions</Text>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={styles.quickActionTitle} numberOfLines={2}>
+                AI Travel Guide
+              </Text>
+              <Text style={styles.quickActionSub} numberOfLines={1}>
+                Smart suggestions
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} />
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textMuted} style={styles.quickActionChevron} />
           </TouchableOpacity>
         </View>
 
@@ -868,19 +975,37 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.background,
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
-  heroContainer: {
+  heroContainerWithCover: {
     position: 'relative',
-    height: 220,
+    height: 180,
     width: '100%',
+    overflow: 'hidden',
+  },
+  heroContainerNoCover: {
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.border,
+    paddingTop: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+  },
+  heroHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  heroActionsInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
   },
   heroImage: {
     width: '100%',
     height: '100%',
-  },
-  heroPlaceholder: {
-    backgroundColor: Theme.colors.surfaceElevated,
   },
   heroOverlay: {
     position: 'absolute',
@@ -894,7 +1019,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     right: 14,
-    zIndex: 10,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   floatingActionBtn: {
     width: 36,
@@ -913,16 +1041,16 @@ const styles = StyleSheet.create({
     right: 16,
   },
   tripName: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
     marginBottom: 6,
   },
   heroMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     flexWrap: 'wrap',
   },
   heroMetaItem: {
@@ -943,37 +1071,52 @@ const styles = StyleSheet.create({
   },
   quickActionsBar: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
     paddingHorizontal: 16,
     marginTop: 14,
   },
   quickActionCard: {
-    flex: 1,
     backgroundColor: Theme.colors.surface,
     borderWidth: 1,
     borderColor: Theme.colors.border,
     borderRadius: Theme.borderRadius.lg,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    flexShrink: 0,
+    flexGrow: 0,
   },
   quickActionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  quickActionTextContainer: {
+    flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
   },
   quickActionTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: Theme.colors.textPrimary,
+    lineHeight: 17,
   },
   quickActionSub: {
     fontSize: 11,
     color: Theme.colors.textMuted,
-    marginTop: 1,
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  quickActionChevron: {
+    flexShrink: 0,
+    marginLeft: 'auto',
   },
   statsGrid: {
     flexDirection: 'row',

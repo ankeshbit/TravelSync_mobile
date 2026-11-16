@@ -15,6 +15,7 @@ import { useUpdateTrip, useDeleteTrip } from '@/hooks/useTrips';
 import { markTripDeletedLocally } from '@/hooks/useTripSocket';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { validateTripForm, dateStringToISO } from '@/utils/tripValidation';
+import { parseAmount } from '@/utils/money';
 
 import { getErrorMessage } from '@/api/client';
 import { useTrip } from '@/hooks/useTripDetails';
@@ -78,11 +79,39 @@ function EditTripForm({ trip }: { trip: Trip }) {
   const [status, setStatus] = useState<TripStatus>(trip.status || 'planning');
   const [coverImageUrl, setCoverImageUrl] = useState(trip.coverImageUrl || '');
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace({ pathname: '/trip/[id]', params: { id: trip.id } });
+    }
+  };
 
-
-// Edit form is accessible while Danger Zone (Delete Trip) is gated on isOwner [BACKEND?]
+  // Guard against direct route access by non-owners
+  if (!isOwner) {
+    return (
+      <View style={styles.accessContainer}>
+        <Ionicons name="lock-closed-outline" size={48} color={Theme.colors.status.warning} />
+        <Text style={styles.accessTitle}>Trip Editing Restricted</Text>
+        <Text style={styles.accessMessage}>
+          Only the trip organizer ({trip.owner?.name || 'the trip owner'}) can modify trip details, dates, and budget settings. As a co-traveler, you can still add itinerary stops and log expenses from the trip overview.
+        </Text>
+        <Button
+          title="Back to Trip"
+          variant="outline"
+          onPress={handleBack}
+          style={{ marginTop: 24, minWidth: 160 }}
+          icon={<Ionicons name="arrow-back" size={16} color={Theme.colors.textPrimary} />}
+        />
+      </View>
+    );
+  }
 
   const handleUpdate = async () => {
+    if (!isOwner) {
+      Alert.alert('Access Denied', 'Only the trip organizer can modify trip details.');
+      return;
+    }
     if (!name.trim()) {
       Alert.alert('Required', 'Please enter a trip name.');
       return;
@@ -103,7 +132,7 @@ function EditTripForm({ trip }: { trip: Trip }) {
         destination: destination.trim(),
         startDate: dateStringToISO(startDate),
         endDate: dateStringToISO(endDate),
-        budgetPerPerson: budget.trim() !== '' ? parseFloat(budget) : 0,
+        budgetPerPerson: budget.trim() !== '' ? (parseAmount(budget) ?? 0) : 0,
         currency: currency.trim().toUpperCase() || 'INR',
         status,
         coverImageUrl: coverImageUrl.trim() !== '' ? coverImageUrl.trim() : null,
@@ -118,6 +147,10 @@ function EditTripForm({ trip }: { trip: Trip }) {
   };
 
   const handleDeleteTrip = () => {
+    if (!isOwner) {
+      Alert.alert('Access Denied', 'Only the trip organizer can delete this trip.');
+      return;
+    }
     Alert.alert(
       'Delete Trip',
       'Are you sure you want to delete this trip? All places, itineraries, and expenses will be permanently removed.',

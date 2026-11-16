@@ -8,15 +8,16 @@ import {
   Alert,
   TouchableOpacity,
   Switch,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { getApiBaseUrl } from '@/config/env';
 import { Button } from '@/components/common/Button';
 import { BottomSheetModal } from '@/components/common/BottomSheetModal';
@@ -65,37 +66,12 @@ export default function ProfileScreen() {
     setProfilePicture(user?.picture || null);
   }
 
-  // Preferences & Notifications State (persisted per uid)
-  const [preferredCurrency, setPreferredCurrency] = useState('USD');
-  const [notifyTripUpdates, setNotifyTripUpdates] = useState(true);
-  const [notifyExpenseAlerts, setNotifyExpenseAlerts] = useState(true);
-  const [notifyLiveActivity, setNotifyLiveActivity] = useState(true);
-
-  const prefsKey = firebaseUser?.uid ? `user_prefs_${firebaseUser.uid}` : null;
-
-  useEffect(() => {
-    if (!prefsKey) return;
-    AsyncStorage.getItem(prefsKey).then((saved) => {
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.preferredCurrency) setPreferredCurrency(parsed.preferredCurrency);
-          if (parsed.notifyTripUpdates !== undefined) setNotifyTripUpdates(parsed.notifyTripUpdates);
-          if (parsed.notifyExpenseAlerts !== undefined) setNotifyExpenseAlerts(parsed.notifyExpenseAlerts);
-          if (parsed.notifyLiveActivity !== undefined) setNotifyLiveActivity(parsed.notifyLiveActivity);
-        } catch {}
-      }
-    });
-  }, [prefsKey]);
-
-  const updatePreference = (key: string, val: any) => {
-    if (!prefsKey) return;
-    AsyncStorage.getItem(prefsKey).then((saved) => {
-      const current = saved ? JSON.parse(saved) : {};
-      current[key] = val;
-      AsyncStorage.setItem(prefsKey, JSON.stringify(current)).catch(() => {});
-    });
-  };
+  // Preferences & Notifications State (persisted safely without race conditions)
+  const { preferences, updatePreference } = useUserPreferences();
+  const preferredCurrency = preferences.preferredCurrency;
+  const notifyTripUpdates = preferences.notifyTripUpdates;
+  const notifyExpenseAlerts = preferences.notifyExpenseAlerts;
+  const notifyLiveActivity = preferences.notifyLiveActivity;
 
   // OTP Modal state for account deletion
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -162,6 +138,12 @@ export default function ProfileScreen() {
       }
 
       const asset = result.assets[0];
+
+      if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+        Alert.alert('File Too Large', 'Please select an image smaller than 5MB.');
+        return;
+      }
+
       setIsUploadingPhoto(true);
 
       const formData = new FormData();
@@ -170,11 +152,17 @@ export default function ProfileScreen() {
       const ext = match ? match[1].toLowerCase() : 'jpg';
       const mimeType = asset.mimeType || (ext === 'jpg' ? 'image/jpeg' : `image/${ext}`);
 
-      formData.append('photo', {
-        uri: asset.uri, // keep file:// on both platforms
-        name: filename,
-        type: mimeType,
-      } as any);
+      if (Platform.OS === 'web') {
+        const fetchRes = await fetch(asset.uri);
+        const blob = await fetchRes.blob();
+        formData.append('photo', blob, filename);
+      } else {
+        formData.append('photo', {
+          uri: asset.uri,
+          name: filename,
+          type: mimeType,
+        } as any);
+      }
 
       const res = await uploadProfilePhoto(formData);
       if (res?.picture) {
@@ -507,7 +495,7 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         key={curr}
                         style={[styles.currencyPill, isSelected && styles.currencyPillActive]}
-                        onPress={() => { setPreferredCurrency(curr); updatePreference('preferredCurrency', curr); }}
+                        onPress={() => updatePreference('preferredCurrency', curr)}
                       >
                         <Text style={[styles.currencyPillText, isSelected && styles.currencyPillTextActive]}>
                           {curr}
@@ -528,12 +516,27 @@ export default function ProfileScreen() {
             <Card style={styles.cardSection}>
               <View style={styles.toggleRow}>
                 <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.settingTitle}>Live Member Presence</Text>
+                  <Text style={styles.settingDesc}>Show active presence indicators when collaborators are viewing trips</Text>
+                </View>
+                <Switch
+                  value={notifyLiveActivity}
+                  onValueChange={(val) => updatePreference('notifyLiveActivity', val)}
+                  trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
                   <Text style={styles.settingTitle}>Trip Updates</Text>
-                  <Text style={styles.settingDesc}>Get notified about itinerary stop changes and member invites</Text>
+                  <Text style={styles.settingDesc}>Real-time collaboration alerts for itinerary changes and invites</Text>
                 </View>
                 <Switch
                   value={notifyTripUpdates}
-                  onValueChange={(val) => { setNotifyTripUpdates(val); updatePreference('notifyTripUpdates', val); }}
+                  onValueChange={(val) => updatePreference('notifyTripUpdates', val)}
                   trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
                   thumbColor="#FFFFFF"
                 />
@@ -544,26 +547,11 @@ export default function ProfileScreen() {
               <View style={styles.toggleRow}>
                 <View style={{ flex: 1, paddingRight: 12 }}>
                   <Text style={styles.settingTitle}>Expense Alerts</Text>
-                  <Text style={styles.settingDesc}>Get notified when new shared expenses or debt settlements are logged</Text>
+                  <Text style={styles.settingDesc}>Real-time alerts when new shared expenses or settlements are logged</Text>
                 </View>
                 <Switch
                   value={notifyExpenseAlerts}
-                  onValueChange={(val) => { setNotifyExpenseAlerts(val); updatePreference('notifyExpenseAlerts', val); }}
-                  trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={styles.settingTitle}>Live Member Presence</Text>
-                  <Text style={styles.settingDesc}>Show active presence indicators when collaborators are viewing trips</Text>
-                </View>
-                <Switch
-                  value={notifyLiveActivity}
-                  onValueChange={(val) => { setNotifyLiveActivity(val); updatePreference('notifyLiveActivity', val); }}
+                  onValueChange={(val) => updatePreference('notifyExpenseAlerts', val)}
                   trackColor={{ false: Theme.colors.border, true: Theme.colors.accent }}
                   thumbColor="#FFFFFF"
                 />

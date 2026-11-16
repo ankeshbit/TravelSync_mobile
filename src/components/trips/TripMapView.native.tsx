@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +18,9 @@ export function TripMapView({
   places,
   placesWithCoords,
 }: TripMapViewProps) {
+  const mapRef = useRef<MapView | null>(null);
+  const prevCoordsKeyRef = useRef<string>('');
+
   const initialRegion = useMemo(() => {
     if (
       placesWithCoords.length > 0 &&
@@ -40,11 +43,59 @@ export function TripMapView({
   }, [placesWithCoords]);
 
   const polylineCoords = useMemo(() => {
-    return placesWithCoords.map((place) => ({
-      latitude: place.lat!,
-      longitude: place.lng!,
-    }));
+    return placesWithCoords
+      .filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number')
+      .map((place) => ({
+        latitude: place.lat!,
+        longitude: place.lng!,
+      }));
   }, [placesWithCoords]);
+
+  // Update map camera smoothly when active day or coordinates change
+  useEffect(() => {
+    if (!mapRef.current || polylineCoords.length === 0) return;
+
+    const coordsKey = `day_${activeDay}_${polylineCoords.map((c) => `${c.latitude.toFixed(4)},${c.longitude.toFixed(4)}`).join('|')}`;
+    if (coordsKey === prevCoordsKeyRef.current) return;
+    prevCoordsKeyRef.current = coordsKey;
+
+    if (polylineCoords.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: polylineCoords[0].latitude,
+          longitude: polylineCoords[0].longitude,
+          latitudeDelta: 0.04,
+          longitudeDelta: 0.04,
+        },
+        500
+      );
+    } else if (polylineCoords.length > 1) {
+      mapRef.current.fitToCoordinates(polylineCoords, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
+  }, [activeDay, polylineCoords]);
+
+  const onMapReady = () => {
+    if (!mapRef.current || polylineCoords.length === 0) return;
+    if (polylineCoords.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: polylineCoords[0].latitude,
+          longitude: polylineCoords[0].longitude,
+          latitudeDelta: 0.04,
+          longitudeDelta: 0.04,
+        },
+        300
+      );
+    } else if (polylineCoords.length > 1) {
+      mapRef.current.fitToCoordinates(polylineCoords, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: false,
+      });
+    }
+  };
 
   if (placesWithCoords.length === 0) {
     return (
@@ -62,7 +113,12 @@ export function TripMapView({
 
   return (
     <View style={styles.container}>
-      <MapView style={styles.map} initialRegion={initialRegion}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        initialRegion={initialRegion}
+        onMapReady={onMapReady}
+      >
         {polylineCoords.length > 1 && (
           <Polyline
             coordinates={polylineCoords}

@@ -12,7 +12,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
-import { getOfflineTripPack, syncOfflineChanges } from '@/api/trips';
+import { getOfflineTripPack, syncOfflineChanges, normalizeSyncResult } from '@/api/trips';
 import {
   offlineStorage,
   OfflineTripBundle,
@@ -119,19 +119,15 @@ export default function OfflineTripScreen() {
   };
 
   const handleSyncPending = async () => {
-    if (!storageUserId || !tripId || pendingQueue.length === 0) return;
+    if (!storageUserId || !tripId || pendingQueue.length === 0 || syncing) return;
     setSyncing(true);
     try {
       const response = await syncOfflineChanges(tripId, pendingQueue);
+      const normalized = normalizeSyncResult(response, pendingQueue);
 
-      // Extract successfully acknowledged change IDs from backend response
-      const results = (response?.results as { id: string; success: boolean }[]) || [];
-      const ackedIds = Array.isArray(results) && results.length > 0
-        ? results.filter((r) => r.success).map((r) => r.id)
-        : (response?.acknowledgedIds || response?.syncedIds || []);
-
-      if (ackedIds.length > 0) {
-        await offlineStorage.clearPendingSyncQueue(storageUserId, tripId, ackedIds);
+      if (normalized.syncedIds.length > 0) {
+        // Only remove successfully acknowledged items from the pending queue
+        await offlineStorage.clearPendingSyncQueue(storageUserId, tripId, normalized.syncedIds);
       }
 
       // Invalidate live React Query keys for places and details
@@ -141,16 +137,27 @@ export default function OfflineTripScreen() {
 
       setRefreshKey((k) => k + 1);
 
-      if (response?.failedCount && Number(response.failedCount) > 0) {
+      if (normalized.isFullSuccess) {
+        Alert.alert(
+          'Synchronized',
+          `All ${normalized.syncedCount} pending offline change(s) have been saved to the server!`
+        );
+      } else if (normalized.isPartialSuccess) {
         Alert.alert(
           'Partial Sync',
-          `${response.syncedCount || 0} change(s) saved, but ${response.failedCount} failed to sync. Failed items remain queued for retry.`
+          `${normalized.syncedCount} change(s) saved, but ${normalized.failedCount} failed to sync. Failed items remain queued for retry.`
         );
       } else {
-        Alert.alert('Synchronized', 'Pending offline changes have been saved to the server!');
+        Alert.alert(
+          'Sync Incomplete',
+          'Could not synchronize changes with the server. All items remain safely stored offline for retry.'
+        );
       }
     } catch (err: unknown) {
-      Alert.alert('Sync Error', getErrorMessage(err) || 'Failed to sync changes with server.');
+      Alert.alert(
+        'Sync Error',
+        getErrorMessage(err) || 'Failed to sync changes with server. Your offline changes remain safe.'
+      );
     } finally {
       setSyncing(false);
     }

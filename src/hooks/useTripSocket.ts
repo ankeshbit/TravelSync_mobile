@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { io } from 'socket.io-client';
 import { auth } from '@/config/firebase';
 import { getSocketBaseUrl } from '@/config/env';
+import { getUserPreferences } from '@/utils/userPreferences';
 import { TRIP_KEYS } from './useTrips';
 
 const locallyDeletedTripIds = new Set<string>();
@@ -57,6 +58,23 @@ export function useTripSocket(
 
     const socketUrl = getSocketBaseUrl();
 
+    const userPrefsRef = {
+      notifyTripUpdates: true,
+      notifyExpenseAlerts: true,
+      notifyLiveActivity: true,
+    };
+
+    if (auth.currentUser?.uid) {
+      getUserPreferences(auth.currentUser.uid).then((prefs) => {
+        userPrefsRef.notifyTripUpdates = prefs.notifyTripUpdates;
+        userPrefsRef.notifyExpenseAlerts = prefs.notifyExpenseAlerts;
+        userPrefsRef.notifyLiveActivity = prefs.notifyLiveActivity;
+        if (!prefs.notifyLiveActivity) {
+          setActiveMembers([]);
+        }
+      });
+    }
+
     const socketInstance = io(socketUrl, {
       transports: ['websocket', 'polling'],
       auth: async (cb: (data: { token: string | null }) => void) => {
@@ -71,6 +89,10 @@ export function useTripSocket(
     });
 
     const syncActiveMembers = () => {
+      if (!userPrefsRef.notifyLiveActivity) {
+        setActiveMembers([]);
+        return;
+      }
       const members: ActiveMember[] = [];
       userConnectionCountsRef.current.forEach((val, userId) => {
         if (val.count > 0) {
@@ -143,25 +165,33 @@ export function useTripSocket(
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onPlaceAdded?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onPlaceAdded?.();
+      }
     });
 
     socketInstance.on('place:deleted', () => {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onPlaceDeleted?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onPlaceDeleted?.();
+      }
     });
 
     socketInstance.on('place:reordered', () => {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
-      callbacksRef.current?.onPlaceReordered?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onPlaceReordered?.();
+      }
     });
 
     socketInstance.on('place:note_updated', () => {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.places(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
-      callbacksRef.current?.onPlaceNoteUpdated?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onPlaceNoteUpdated?.();
+      }
     });
 
     // Real-time Expenses & Balances
@@ -171,7 +201,9 @@ export function useTripSocket(
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onExpenseAdded?.();
+      if (userPrefsRef.notifyExpenseAlerts) {
+        callbacksRef.current?.onExpenseAdded?.();
+      }
     });
 
     socketInstance.on('expense:deleted', () => {
@@ -180,7 +212,9 @@ export function useTripSocket(
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onExpenseDeleted?.();
+      if (userPrefsRef.notifyExpenseAlerts) {
+        callbacksRef.current?.onExpenseDeleted?.();
+      }
     });
 
     // Real-time Membership & Trip Meta
@@ -188,7 +222,9 @@ export function useTripSocket(
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.members(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.detail(tripId) });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onMemberJoined?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onMemberJoined?.();
+      }
     });
 
     socketInstance.on('trip:updated', () => {
@@ -196,7 +232,9 @@ export function useTripSocket(
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.lists() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.activity(tripId) });
-      callbacksRef.current?.onTripUpdated?.();
+      if (userPrefsRef.notifyTripUpdates) {
+        callbacksRef.current?.onTripUpdated?.();
+      }
     });
 
     let hasExited = false;

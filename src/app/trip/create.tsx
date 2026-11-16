@@ -12,6 +12,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCreateTrip } from '@/hooks/useTrips';
 import { validateTripForm, buildDefaultDates, dateStringToISO } from '@/utils/tripValidation';
+import { parseAmount } from '@/utils/money';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/context/AuthContext';
@@ -71,7 +72,7 @@ export default function CreateTripScreen() {
         destination: destination.trim(),
         startDate: dateStringToISO(startDate),
         endDate: dateStringToISO(endDate),
-        budgetPerPerson: parseFloat(String(budget)) || 0,
+        budgetPerPerson: budget.trim() !== '' ? (parseAmount(budget) ?? 0) : 0,
         currency: currency.trim().toUpperCase() || 'INR',
       });
 

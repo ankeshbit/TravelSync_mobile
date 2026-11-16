@@ -203,11 +203,16 @@ TravelSync Mobile features an interactive map planner using `react-native-maps` 
 To enable native Google Maps:
 1. Obtain a Google Maps API Key from the [Google Cloud Console](https://console.cloud.google.com/google/maps-apis).
 2. Enable **Maps SDK for Android** and **Maps SDK for iOS**.
-3. Add your API key to your local `.env` file:
+3. Add your API key(s) to your local `.env` file:
    ```env
-   EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+   # Platform-specific keys (recommended when using API key restrictions like SHA-1 / Bundle ID)
+   EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY=your_ios_maps_api_key
+   EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY=your_android_maps_api_key
+
+   # Or a shared key fallback for both platforms:
+   # EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_shared_maps_api_key
    ```
-4. The key is automatically configured in `app.json` under:
+4. The key is automatically configured dynamically in `app.config.js` under:
    - `expo.ios.config.googleMapsApiKey`
    - `expo.android.config.googleMaps.apiKey`
 
@@ -234,9 +239,10 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
 
-# Google Maps API Keys (Native builds)
+# Google Maps API Keys (Native builds - platform-specific or shared fallback)
 EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY=
 EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY=
+# EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=
 ```
 
 ### Google Sign-In Setup

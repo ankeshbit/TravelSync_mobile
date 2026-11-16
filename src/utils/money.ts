@@ -15,60 +15,133 @@ export interface SettlementItem {
 /**
  * Parse an amount string or number safely.
  * Accepts both ',' and '.' as decimal separators.
- * Rejects non-numeric garbage like '12abc', multiple signs, or negative numbers.
+ * Supports standard Western and Indian thousands group separators.
+ * Rejects malformed values (e.g. '1,2,3', '1.2.3', '12..50', 'abc123', '--100').
+ * Rejects negative numbers, multiple signs, non-numeric garbage, and empty strings.
  * Rounds to 2 decimal places.
  */
 export function parseAmount(input: string | number | null | undefined): number | null {
   if (input === null || input === undefined) return null;
   if (typeof input === 'number') {
-    if (!Number.isFinite(input) || isNaN(input) || input < 0) return null;
+    if (!Number.isFinite(input) || Number.isNaN(input) || input < 0) return null;
     return Math.round(input * 100) / 100;
   }
 
-  const str = input.trim();
+  if (typeof input !== 'string') return null;
+
+  const raw = input.trim();
+  if (!raw) return null;
+
+  // Reject negative numbers or multiple signs
+  if (raw.startsWith('-') || /^[+-]{2,}/.test(raw)) return null;
+
+  // Optional single leading +
+  const str = raw.startsWith('+') ? raw.slice(1).trim() : raw;
   if (!str) return null;
 
-  // Reject invalid characters: allow only digits, periods, commas, optional leading +
-  if (!/^\+?[0-9.,]+$/.test(str)) {
-    return null;
-  }
+  // Must only contain digits, commas, periods
+  if (!/^[0-9.,]+$/.test(str)) return null;
 
-  const sanitized = str.startsWith('+') ? str.slice(1) : str;
+  // Reject consecutive separators like '..', ',,', '.,', ',.'
+  if (/[.,]{2,}/.test(str)) return null;
 
-  const hasComma = sanitized.includes(',');
-  const hasDot = sanitized.includes('.');
+  // Reject leading or trailing separator like '.5', '5.', ',5', '5,'
+  if (/^[.,]|[.,]$/.test(str)) return null;
 
-  let normalizedStr = sanitized;
+  const hasComma = str.includes(',');
+  const hasDot = str.includes('.');
+
+  let normalizedStr: string | null = null;
 
   if (hasComma && hasDot) {
-    const lastComma = sanitized.lastIndexOf(',');
-    const lastDot = sanitized.lastIndexOf('.');
-    if (lastComma > lastDot) {
-      // e.g. "1.234,56" -> dot is thousands, comma is decimal
-      normalizedStr = sanitized.replace(/\./g, '').replace(',', '.');
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+
+    if (lastComma < lastDot) {
+      // Format: thousands comma, decimal dot: e.g. "1,000.50", "1,00,000.50"
+      // Verify all commas are strictly before the dot
+      if (str.indexOf(',', lastDot) !== -1) return null;
+
+      const intPart = str.slice(0, lastDot);
+      const decPart = str.slice(lastDot + 1);
+
+      if (!/^\d+$/.test(decPart)) return null;
+
+      // Validate thousands grouping for intPart:
+      // Valid Western: e.g. 1,000 or 1,000,000
+      // Valid Indian: e.g. 1,00,000 or 10,00,000
+      const isWestern = /^\d{1,3}(?:,\d{3})+$/.test(intPart);
+      const isIndian = /^\d{1,3}(?:,\d{2})*,\d{3}$/.test(intPart);
+
+      if (!isWestern && !isIndian) return null;
+
+      normalizedStr = intPart.replace(/,/g, '') + '.' + decPart;
     } else {
-      // e.g. "1,234.56" -> comma is thousands, dot is decimal
-      normalizedStr = sanitized.replace(/,/g, '');
+      // Format: thousands dot, decimal comma: e.g. "1.000,50", "1.000.000,50"
+      // Verify all dots are strictly before the comma
+      if (str.indexOf('.', lastComma) !== -1) return null;
+
+      const intPart = str.slice(0, lastComma);
+      const decPart = str.slice(lastComma + 1);
+
+      if (!/^\d+$/.test(decPart)) return null;
+
+      // Validate European thousands grouping: e.g. 1.000 or 1.000.000
+      if (!/^\d{1,3}(?:\.\d{3})+$/.test(intPart)) return null;
+
+      normalizedStr = intPart.replace(/\./g, '') + '.' + decPart;
     }
   } else if (hasComma) {
-    const commaCount = (sanitized.match(/,/g) || []).length;
+    const commaCount = (str.match(/,/g) || []).length;
     if (commaCount === 1) {
-      // e.g. "12,50" -> "12.50"
-      normalizedStr = sanitized.replace(',', '.');
+      // Could be European decimal e.g. "12,50" or Western thousands without decimal e.g. "1,000"
+      if (/^\d+,\d{1,2}$/.test(str)) {
+        // European decimal: e.g. "12,50" -> 12.50
+        normalizedStr = str.replace(',', '.');
+      } else if (/^\d{1,3},\d{3}$/.test(str)) {
+        // Standard thousands integer: e.g. "1,000" or "12,500"
+        normalizedStr = str.replace(',', '');
+      } else {
+        return null;
+      }
     } else {
-      // e.g. "1,000,000"
-      normalizedStr = sanitized.replace(/,/g, '');
+      // Multiple commas -> thousands separators: e.g. "1,000,000" or "1,00,000"
+      const isWestern = /^\d{1,3}(?:,\d{3})+$/.test(str);
+      const isIndian = /^\d{1,3}(?:,\d{2})*,\d{3}$/.test(str);
+      if (!isWestern && !isIndian) return null;
+
+      normalizedStr = str.replace(/,/g, '');
     }
   } else if (hasDot) {
-    const dotCount = (sanitized.match(/\./g) || []).length;
-    if (dotCount > 1) {
-      // e.g. "1.000.000"
-      normalizedStr = sanitized.replace(/\./g, '');
+    const dotCount = (str.match(/\./g) || []).length;
+    if (dotCount === 1) {
+      // Standard decimal e.g. "100.50", "12.5", "1.999"
+      if (/^\d+\.\d+$/.test(str)) {
+        normalizedStr = str;
+      } else {
+        return null;
+      }
+    } else {
+      // Multiple dots -> European thousands separators e.g. "1.000.000"
+      if (/^\d{1,3}(?:\.\d{3})+$/.test(str)) {
+        normalizedStr = str.replace(/\./g, '');
+      } else {
+        return null;
+      }
+    }
+  } else {
+    // Pure digits
+    if (/^\d+$/.test(str)) {
+      normalizedStr = str;
+    } else {
+      return null;
     }
   }
 
+  if (normalizedStr === null) return null;
+
   const num = Number(normalizedStr);
-  if (!Number.isFinite(num) || isNaN(num) || num < 0) {
+  if (!Number.isFinite(num) || Number.isNaN(num) || num < 0) {
     return null;
   }
 
