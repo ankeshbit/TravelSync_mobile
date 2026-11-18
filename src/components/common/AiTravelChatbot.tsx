@@ -98,12 +98,21 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
         };
       }
 
+      const rawFollowUps = Array.isArray(res?.structuredFollowUps) ? res.structuredFollowUps : [];
+      const normalizedFollowUps = rawFollowUps
+        .filter((q) => q && typeof q === 'object')
+        .map((q) => ({
+          ...q,
+          options: Array.isArray(q.options) ? q.options : [],
+        }))
+        .filter((q) => q.options.length > 0);
+
       const botMsg: ChatMessage = {
         id: createMessageId('bot'),
         sender: 'bot',
         text: res?.reply || res?.message || res?.assistant_response || 'Here are some recommendations based on your preferences.',
         destinations: res?.destinations || res?.recommendations || [],
-        structuredFollowUps: res?.structuredFollowUps || [],
+        structuredFollowUps: normalizedFollowUps,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -260,11 +269,11 @@ export function AiTravelChatbot({ visible, onClose }: AiTravelChatbotProps) {
                   {msg.structuredFollowUps && msg.structuredFollowUps.length > 0 && (
                     <View style={styles.followUpBox}>
                       <Text style={styles.followUpTitle}>Refine recommendations:</Text>
-                      {msg.structuredFollowUps.map((q, qIdx) => (
+                      {(msg.structuredFollowUps ?? []).map((q, qIdx) => (
                         <View key={qIdx} style={{ marginTop: 6 }}>
                           <Text style={styles.followUpQuestion}>{q.question}</Text>
                           <View style={styles.optionsWrap}>
-                            {q.options.map((opt, optIdx) => (
+                            {(q.options ?? []).map((opt, optIdx) => (
                               <TouchableOpacity
                                 key={optIdx}
                                 style={styles.optionPill}

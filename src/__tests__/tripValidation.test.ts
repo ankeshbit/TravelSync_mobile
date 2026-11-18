@@ -1,4 +1,4 @@
-import { parseTripDate, validateTripForm, buildDefaultDates } from '../utils/tripValidation';
+import { parseTripDate, validateTripForm, buildDefaultDates, dateStringToISO } from '../utils/tripValidation';
 
 describe('parseTripDate', () => {
   it('parses valid date', () => {
@@ -68,5 +68,31 @@ describe('buildDefaultDates', () => {
   it('end is after start', () => {
     const { startDate, endDate } = buildDefaultDates();
     expect(endDate > startDate).toBe(true);
+  });
+});
+
+describe('dateStringToISO across extreme timezones', () => {
+  const originalTZ = process.env.TZ;
+
+  afterEach(() => {
+    process.env.TZ = originalTZ;
+  });
+
+  it('keeps exact calendar date in Pacific/Auckland (UTC+12/UTC+13)', () => {
+    process.env.TZ = 'Pacific/Auckland';
+    const iso = dateStringToISO('2026-06-15');
+    const d = new Date(iso);
+    expect(d.getUTCDate()).toBe(15);
+    expect(d.getUTCFullYear()).toBe(2026);
+    expect(d.getUTCMonth()).toBe(5);
+  });
+
+  it('keeps exact calendar date in Pacific/Pago_Pago (UTC-11)', () => {
+    process.env.TZ = 'Pacific/Pago_Pago';
+    const iso = dateStringToISO('2026-06-15');
+    const d = new Date(iso);
+    expect(d.getUTCDate()).toBe(15);
+    expect(d.getUTCFullYear()).toBe(2026);
+    expect(d.getUTCMonth()).toBe(5);
   });
 });

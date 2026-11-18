@@ -27,6 +27,7 @@ import { BrandLogo } from '@/components/common/BrandLogo';
 import { Theme } from '@/constants/theme';
 import { updateProfile, uploadProfilePhoto, sendDeleteOtp, deleteAccount } from '@/api/auth';
 import { getErrorMessage } from '@/api/client';
+import { clearUserPreferences } from '@/utils/userPreferences';
 
 type SettingsTab = 'profile' | 'security' | 'preferences' | 'notifications' | 'account';
 
@@ -42,7 +43,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD', 'CAD'];
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, firebaseUser, logout, syncBackendUser, isLoading, clearError } = useAuth();
+  const { user, firebaseUser, logout, syncBackendUser, isLoading, isInitializing, clearError } = useAuth();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
 
@@ -239,6 +240,9 @@ export default function ProfileScreen() {
 
     try {
       setIsDeleting(true);
+      if (firebaseUser?.uid) {
+        await clearUserPreferences(firebaseUser.uid).catch(() => {});
+      }
       await deleteAccount(otpCode.trim());
       closeDeleteModal();
       await logout();
@@ -263,10 +267,10 @@ export default function ProfileScreen() {
   };
 
   useEffect(() => {
-    if (!isLoading && !firebaseUser) {
+    if (!isInitializing && !firebaseUser) {
       router.replace('/(auth)/login');
     }
-  }, [firebaseUser, isLoading, router]);
+  }, [firebaseUser, isInitializing, router]);
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out from TravelSync Mobile?', [

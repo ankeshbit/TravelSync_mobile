@@ -54,8 +54,8 @@ export function buildDefaultDates(): { startDate: string; endDate: string } {
 export function dateStringToISO(dateStr: string): string {
   const d = parseTripDate(dateStr);
   if (!d) throw new Error(`Invalid date: ${dateStr}`);
-  // Use noon local time to avoid cross-timezone date shifts
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0).toISOString();
+  // Use UTC noon to prevent cross-timezone date shifts at extreme timezones (e.g. UTC+13/+14, UTC-12)
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12)).toISOString();
 }
 
 /**

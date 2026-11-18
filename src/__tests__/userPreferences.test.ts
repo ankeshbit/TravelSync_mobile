@@ -5,6 +5,7 @@ import {
   DEFAULT_USER_PREFERENCES,
   PREFS_KEY,
   clearUserPreferencesMemoryCache,
+  clearUserPreferences,
 } from '../utils/userPreferences';
 
 describe('userPreferences persistence and concurrency', () => {
@@ -87,5 +88,31 @@ describe('userPreferences persistence and concurrency', () => {
     await AsyncStorage.setItem(storageKey, 'corrupt-not-json');
     const prefs = await getUserPreferences(uid);
     expect(prefs).toEqual(DEFAULT_USER_PREFERENCES);
+  });
+
+  it('clears stored preferences and memory cache via clearUserPreferences', async () => {
+    await updateUserPreferences(uid, { preferredCurrency: 'AUD' });
+    const loaded = await getUserPreferences(uid);
+    expect(loaded.preferredCurrency).toBe('AUD');
+
+    await clearUserPreferences(uid);
+
+    const reloaded = await getUserPreferences(uid);
+    expect(reloaded.preferredCurrency).toBe('USD'); // Reset to default
+    const stored = await AsyncStorage.getItem(storageKey);
+    expect(stored).toBeNull();
+  });
+
+  it('rethrows error and reverts memory cache if AsyncStorage.setItem fails', async () => {
+    await updateUserPreferences(uid, { preferredCurrency: 'CAD' });
+
+    const originalSetItem = AsyncStorage.setItem;
+    (AsyncStorage.setItem as jest.Mock) = jest.fn().mockRejectedValueOnce(new Error('Disk write failure'));
+
+    await expect(updateUserPreferences(uid, { preferredCurrency: 'JPY' })).rejects.toThrow('Disk write failure');
+
+    AsyncStorage.setItem = originalSetItem;
+    const current = await getUserPreferences(uid);
+    expect(current.preferredCurrency).toBe('CAD');
   });
 });

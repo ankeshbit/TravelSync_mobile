@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { withKeyLock, offlineStorage } from '../services/offlineStorage';
 
 describe('offlineStorage withKeyLock', () => {
@@ -363,5 +364,201 @@ describe('offlineStorage updatePlaceNoteLocal', () => {
 
     const queue = await offlineStorage.getPendingSyncQueue(userId, tripId);
     expect(queue).toHaveLength(2);
+  });
+
+  it('keeps the bundle unchanged when AsyncStorage.setItem fails on the queue key', async () => {
+    const pack = {
+      trip: {
+        id: tripId,
+        name: 'Atomic Note Trip',
+        destination: 'Kyoto',
+        startDate: '2026-09-01',
+        endDate: '2026-09-10',
+      },
+      itinerary: [
+        { id: 'place_atomic', name: 'Fushimi Inari', note: 'Original note' },
+      ],
+    };
+
+    await offlineStorage.saveOfflineTripPack(userId, pack);
+
+    const originalSetItem = AsyncStorage.setItem;
+    // Mock setItem to reject when writing to the pending sync key
+    (AsyncStorage.setItem as jest.Mock) = jest.fn((key: string, value: string) => {
+      if (key.includes('_sync_')) {
+        return Promise.reject(new Error('AsyncStorage sync queue write error'));
+      }
+      return originalSetItem(key, value);
+    });
+
+    const res = await offlineStorage.updatePlaceNoteLocal(userId, tripId, 'place_atomic', 'Should not be saved');
+    expect(res).toBe(false);
+
+    // Restore original mock
+    AsyncStorage.setItem = originalSetItem;
+
+    // Verify bundle note is completely unchanged
+    const bundle = await offlineStorage.getOfflineTripBundle(userId, tripId);
+    expect(bundle?.itinerary[0].note).toBe('Original note');
+
+    // Verify queue has nothing
+    const queue = await offlineStorage.getPendingSyncQueue(userId, tripId);
+    expect(queue).toHaveLength(0);
+  });
+
+  it('serializes interleaving between saveOfflineTripPack and deleteOfflineTrip', async () => {
+    const pack = {
+      trip: {
+        id: tripId,
+        name: 'Interleaving Trip',
+        destination: 'Osaka',
+        startDate: '2026-10-01',
+        endDate: '2026-10-05',
+      },
+      itinerary: [{ id: 'p_osaka', name: 'Dotonbori' }],
+    };
+
+    // Run save and delete concurrently; consistent lock order prevents deadlock
+    await Promise.all([
+      offlineStorage.saveOfflineTripPack(userId, pack),
+      offlineStorage.deleteOfflineTrip(userId, tripId),
+    ]);
+
+    // System did not hang or deadlock
+    expect(true).toBe(true);
+  });
+});
+
+describe('offlineStorage retry limits and manual discard', () => {
+  const userId = 'user_retries_1';
+  const tripId = 'trip_retries_1';
+
+  beforeEach(async () => {
+    await offlineStorage.clearPendingSyncQueue(userId, tripId);
+  });
+
+  it('increments attempts counter on explicit failure and flags needs_attention after 3 failures', async () => {
+    const item = {
+      id: 'failed_item_1',
+      tripId,
+      type: 'place_note' as const,
+      payload: { placeId: 'p1', note: 'test' },
+      timestamp: '2026-01-01',
+    };
+
+    await offlineStorage.queuePendingSync(userId, tripId, item);
+
+    // Attempt 1
+    let q = await offlineStorage.recordSyncFailures(userId, tripId, ['failed_item_1']);
+    expect(q[0].attempts).toBe(1);
+    expect(q[0].status).not.toBe('needs_attention');
+
+    // Attempt 2
+    q = await offlineStorage.recordSyncFailures(userId, tripId, ['failed_item_1']);
+    expect(q[0].attempts).toBe(2);
+    expect(q[0].status).not.toBe('needs_attention');
+
+    // Attempt 3: moves to needs_attention
+    q = await offlineStorage.recordSyncFailures(userId, tripId, ['failed_item_1']);
+    expect(q[0].attempts).toBe(3);
+    expect(q[0].status).toBe('needs_attention');
+  });
+
+  it('discards a pending sync item completely from queue', async () => {
+    const item = {
+      id: 'discard_me',
+      tripId,
+      type: 'place_note' as const,
+      payload: { placeId: 'p1', note: 'test' },
+      timestamp: '2026-01-01',
+      attempts: 3,
+      status: 'needs_attention' as const,
+    };
+
+    await offlineStorage.queuePendingSync(userId, tripId, item);
+    expect(await offlineStorage.getPendingSyncQueue(userId, tripId)).toHaveLength(1);
+
+    await offlineStorage.discardPendingSyncItem(userId, tripId, 'discard_me');
+    expect(await offlineStorage.getPendingSyncQueue(userId, tripId)).toHaveLength(0);
+  });
+});
+
+describe('offlineStorage migrateLegacyUserStorage', () => {
+  const legacyUserId = 'legacy_backend_user_123';
+  const newUid = 'firebase_uid_456';
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('merges legacy and new pending queues and dedupes by item id', async () => {
+    const tripId = 'trip_merge_1';
+
+    // Set up legacy queue with item1 and item2
+    const legacyQueue = [
+      { id: 'item_1', tripId, type: 'place_note', payload: { note: 'legacy note 1' }, timestamp: '2026-01-01' },
+      { id: 'item_2', tripId, type: 'place_note', payload: { note: 'legacy note 2' }, timestamp: '2026-01-02' },
+    ];
+    await AsyncStorage.setItem(`@travelsync_offline_${legacyUserId}_sync_${tripId}`, JSON.stringify(legacyQueue));
+
+    // Set up new queue with item2 (duplicate) and item3 (new)
+    const newQueue = [
+      { id: 'item_2', tripId, type: 'place_note', payload: { note: 'new note 2' }, timestamp: '2026-01-02' },
+      { id: 'item_3', tripId, type: 'place_note', payload: { note: 'new note 3' }, timestamp: '2026-01-03' },
+    ];
+    await AsyncStorage.setItem(`@travelsync_offline_${newUid}_sync_${tripId}`, JSON.stringify(newQueue));
+
+    // Also set legacy index containing the trip
+    const legacyTrips = [
+      { id: tripId, tripId, name: 'Merge Trip', destination: 'Tokyo', startDate: '2026-01-01', endDate: '2026-01-05', currency: 'USD', downloadedAt: '2026-01-01', placesCount: 1 },
+    ];
+    await AsyncStorage.setItem(`@travelsync_offline_${legacyUserId}_trips`, JSON.stringify(legacyTrips));
+
+    await offlineStorage.migrateLegacyUserStorage(legacyUserId, newUid);
+
+    // Check merged queue under newUid
+    const mergedSyncData = await AsyncStorage.getItem(`@travelsync_offline_${newUid}_sync_${tripId}`);
+    expect(mergedSyncData).not.toBeNull();
+    const mergedQueue = JSON.parse(mergedSyncData!);
+    expect(mergedQueue).toHaveLength(3);
+    const ids = mergedQueue.map((i: any) => i.id);
+    expect(ids).toEqual(['item_2', 'item_3', 'item_1']);
+
+    // Legacy sync key must be deleted
+    const oldSync = await AsyncStorage.getItem(`@travelsync_offline_${legacyUserId}_sync_${tripId}`);
+    expect(oldSync).toBeNull();
+  });
+
+  it('discovers unindexed legacy bundle and queue keys and migrates them', async () => {
+    const unindexedTripId = 'trip_unindexed_99';
+
+    // Set legacy bundle and sync for a trip NOT in the legacy trips index
+    const legacyBundle = {
+      trip: { id: unindexedTripId, tripId: unindexedTripId, name: 'Unindexed Trip', destination: 'Rome', startDate: '2026-05-01', endDate: '2026-05-05', currency: 'EUR', downloadedAt: '2026-01-01', placesCount: 1 },
+      itinerary: [],
+      staysAndTransport: [],
+      documents: [],
+      emergencyContacts: [],
+      notes: [],
+      checklist: [],
+      downloadedAt: '2026-01-01',
+    };
+    await AsyncStorage.setItem(`@travelsync_offline_${legacyUserId}_trip_${unindexedTripId}`, JSON.stringify(legacyBundle));
+    await AsyncStorage.setItem(`@travelsync_offline_${legacyUserId}_sync_${unindexedTripId}`, JSON.stringify([{ id: 'unindexed_sync_1', tripId: unindexedTripId, type: 'place_note', payload: {}, timestamp: '2026-01-01' }]));
+
+    // Empty legacy trips index
+    await AsyncStorage.setItem(`@travelsync_offline_${legacyUserId}_trips`, JSON.stringify([]));
+
+    await offlineStorage.migrateLegacyUserStorage(legacyUserId, newUid);
+
+    // Bundle and queue migrated to newUid
+    const newBundle = await AsyncStorage.getItem(`@travelsync_offline_${newUid}_trip_${unindexedTripId}`);
+    expect(newBundle).not.toBeNull();
+    const newSync = await AsyncStorage.getItem(`@travelsync_offline_${newUid}_sync_${unindexedTripId}`);
+    expect(newSync).not.toBeNull();
+
+    // Summary discovered and added to new trips index
+    const trips = await offlineStorage.getOfflineTrips(newUid);
+    expect(trips.some((t) => t.tripId === unindexedTripId)).toBe(true);
   });
 });

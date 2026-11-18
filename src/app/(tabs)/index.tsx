@@ -69,6 +69,7 @@ export default function DashboardScreen() {
     error: tripsErr,
     refetch: refetchTrips,
     isRefetching,
+    isFetching: isFetchingTrips,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
@@ -235,6 +236,9 @@ export default function DashboardScreen() {
             style={styles.searchInput}
             autoCapitalize="none"
           />
+          {isFetchingTrips && tripsData ? (
+            <ActivityIndicator size="small" color={Theme.colors.accent} style={{ marginRight: 6 }} />
+          ) : null}
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={Theme.colors.textMuted} />
@@ -271,7 +275,7 @@ export default function DashboardScreen() {
     );
   };
 
-  if (tripsLoading && !isRefetching) {
+  if (tripsLoading && !tripsData) {
     return <LoadingState message="Fetching your trips from TravelSync..." fullscreen />;
   }
 

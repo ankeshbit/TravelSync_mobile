@@ -30,6 +30,8 @@ export interface PendingSyncItem {
   type: 'place_note' | 'place_add' | 'place_delete' | 'checklist';
   payload: any;
   timestamp: string;
+  attempts?: number;
+  status?: 'pending' | 'needs_attention';
 }
 
 const TRIPS_LIST_KEY = (userId: string) => `@travelsync_offline_${userId}_trips`;
@@ -109,6 +111,56 @@ async function writeQueueUnlocked(userId: string, tripId: string, queue: Pending
 
 export const offlineStorage = {
   /**
+   * Helper to migrate an individual trip bundle and pending queue.
+   * If both queues exist, merges them and dedupes by item id.
+   */
+  async migrateTripKeys(legacyUserId: string, uid: string, tripId: string): Promise<void> {
+    const oldBundleKey = TRIP_BUNDLE_KEY(legacyUserId, tripId);
+    const newBundleKey = TRIP_BUNDLE_KEY(uid, tripId);
+    const oldSyncKey = PENDING_SYNC_KEY(legacyUserId, tripId);
+    const newSyncKey = PENDING_SYNC_KEY(uid, tripId);
+
+    // Migrate trip bundle
+    const oldBundle = await AsyncStorage.getItem(oldBundleKey);
+    if (oldBundle) {
+      const hasNewBundle = await AsyncStorage.getItem(newBundleKey);
+      if (!hasNewBundle) {
+        await AsyncStorage.setItem(newBundleKey, oldBundle);
+      }
+      await AsyncStorage.removeItem(oldBundleKey);
+    }
+
+    // Migrate pending queue: merge if both exist
+    const oldSync = await AsyncStorage.getItem(oldSyncKey);
+    if (oldSync) {
+      try {
+        const oldQueue: PendingSyncItem[] = JSON.parse(oldSync);
+        const newSync = await AsyncStorage.getItem(newSyncKey);
+        if (newSync) {
+          const newQueue: PendingSyncItem[] = JSON.parse(newSync);
+          const seenIds = new Set(newQueue.map((item) => item.id));
+          const mergedQueue = [...newQueue];
+          for (const item of oldQueue) {
+            if (!seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              mergedQueue.push(item);
+            }
+          }
+          await AsyncStorage.setItem(newSyncKey, JSON.stringify(mergedQueue));
+        } else {
+          await AsyncStorage.setItem(newSyncKey, oldSync);
+        }
+      } catch {
+        const hasNewSync = await AsyncStorage.getItem(newSyncKey);
+        if (!hasNewSync) {
+          await AsyncStorage.setItem(newSyncKey, oldSync);
+        }
+      }
+      await AsyncStorage.removeItem(oldSyncKey);
+    }
+  },
+
+  /**
    * One-time migration: migrate offline storage keyed by legacy backend user.id to firebaseUser.uid
    */
   async migrateLegacyUserStorage(legacyUserId: string, uid: string): Promise<void> {
@@ -118,39 +170,48 @@ export const offlineStorage = {
     await withKeyLock(legacyTripsKey, async () => {
       try {
         const legacyData = await AsyncStorage.getItem(legacyTripsKey);
-        if (!legacyData) return;
-
-        const trips: OfflineTripSummary[] = JSON.parse(legacyData);
+        const trips: OfflineTripSummary[] = legacyData ? JSON.parse(legacyData) : [];
         const existingNewTrips = await this.getOfflineTrips(uid);
         const mergedTrips = [...existingNewTrips];
+        const processedTripIds = new Set<string>();
 
+        // 1. Process trips listed in legacy index
         for (const t of trips) {
+          processedTripIds.add(t.tripId);
           if (!mergedTrips.some((mt) => mt.tripId === t.tripId)) {
             mergedTrips.push(t);
           }
+          await this.migrateTripKeys(legacyUserId, uid, t.tripId);
+        }
 
-          // Migrate trip bundle
-          const oldBundleKey = TRIP_BUNDLE_KEY(legacyUserId, t.tripId);
-          const newBundleKey = TRIP_BUNDLE_KEY(uid, t.tripId);
-          const oldBundle = await AsyncStorage.getItem(oldBundleKey);
-          if (oldBundle) {
-            const hasNewBundle = await AsyncStorage.getItem(newBundleKey);
-            if (!hasNewBundle) {
-              await AsyncStorage.setItem(newBundleKey, oldBundle);
-            }
-            await AsyncStorage.removeItem(oldBundleKey);
+        // 2. Discover unindexed legacy bundle and queue keys
+        const allKeys = await AsyncStorage.getAllKeys();
+        const bundlePrefix = `@travelsync_offline_${legacyUserId}_trip_`;
+        const syncPrefix = `@travelsync_offline_${legacyUserId}_sync_`;
+
+        for (const key of allKeys) {
+          let discoveredTripId: string | null = null;
+          if (key.startsWith(bundlePrefix)) {
+            discoveredTripId = key.slice(bundlePrefix.length);
+          } else if (key.startsWith(syncPrefix)) {
+            discoveredTripId = key.slice(syncPrefix.length);
           }
 
-          // Migrate pending queue
-          const oldSyncKey = PENDING_SYNC_KEY(legacyUserId, t.tripId);
-          const newSyncKey = PENDING_SYNC_KEY(uid, t.tripId);
-          const oldSync = await AsyncStorage.getItem(oldSyncKey);
-          if (oldSync) {
-            const hasNewSync = await AsyncStorage.getItem(newSyncKey);
-            if (!hasNewSync) {
-              await AsyncStorage.setItem(newSyncKey, oldSync);
+          if (discoveredTripId && !processedTripIds.has(discoveredTripId)) {
+            processedTripIds.add(discoveredTripId);
+            await this.migrateTripKeys(legacyUserId, uid, discoveredTripId);
+
+            // If an unindexed bundle exists, ensure its summary is in the trips index
+            const newBundleKey = TRIP_BUNDLE_KEY(uid, discoveredTripId);
+            const bundleData = await AsyncStorage.getItem(newBundleKey);
+            if (bundleData) {
+              try {
+                const parsedBundle: OfflineTripBundle = JSON.parse(bundleData);
+                if (parsedBundle?.trip && !mergedTrips.some((mt) => mt.tripId === discoveredTripId)) {
+                  mergedTrips.push(parsedBundle.trip);
+                }
+              } catch {}
             }
-            await AsyncStorage.removeItem(oldSyncKey);
           }
         }
 
@@ -188,62 +249,65 @@ export const offlineStorage = {
     if (!userId || !pack || !pack.trip) return;
 
     const tripId = pack.trip.id;
-    const key = TRIP_BUNDLE_KEY(userId, tripId);
+    const bundleKey = TRIP_BUNDLE_KEY(userId, tripId);
+    const syncKey = PENDING_SYNC_KEY(userId, tripId);
 
-    await withKeyLock(key, async () => {
-      const downloadedAt = new Date().toISOString();
-      const existingQueue = await readQueueUnlocked(userId, tripId);
+    await withKeyLock(bundleKey, async () => {
+      await withKeyLock(syncKey, async () => {
+        const downloadedAt = new Date().toISOString();
+        const existingQueue = await readQueueUnlocked(userId, tripId);
 
-      const itinerary = [...(pack.itinerary || pack.places || [])];
+        const itinerary = [...(pack.itinerary || pack.places || [])];
 
-      // Re-apply pending offline place note edits on top of refreshed data
-      for (const item of existingQueue) {
-        if (item.type === 'place_note' && item.payload?.placeId) {
-          const targetPlace = itinerary.find((p: any) => p && p.id === item.payload.placeId);
-          if (targetPlace) {
-            targetPlace.note = item.payload.note;
+        // Re-apply pending offline place note edits on top of refreshed data
+        for (const item of existingQueue) {
+          if (item.type === 'place_note' && item.payload?.placeId) {
+            const targetPlace = itinerary.find((p: any) => p && p.id === item.payload.placeId);
+            if (targetPlace) {
+              targetPlace.note = item.payload.note;
+            }
           }
         }
-      }
 
-      const summary: OfflineTripSummary = {
-        id: tripId,
-        tripId,
-        name: pack.trip.name,
-        destination: pack.trip.destination,
-        startDate: pack.trip.startDate,
-        endDate: pack.trip.endDate,
-        currency: pack.trip.currency || 'USD',
-        coverImageUrl: pack.trip.coverImageUrl,
-        downloadedAt,
-        placesCount: Array.isArray(itinerary) ? itinerary.length : 0,
-      };
+        const summary: OfflineTripSummary = {
+          id: tripId,
+          tripId,
+          name: pack.trip.name,
+          destination: pack.trip.destination,
+          startDate: pack.trip.startDate,
+          endDate: pack.trip.endDate,
+          currency: pack.trip.currency || 'USD',
+          coverImageUrl: pack.trip.coverImageUrl,
+          downloadedAt,
+          placesCount: Array.isArray(itinerary) ? itinerary.length : 0,
+        };
 
-      const bundle: OfflineTripBundle = {
-        trip: summary,
-        itinerary,
-        staysAndTransport: pack.staysAndTransport || [],
-        documents: pack.documents || [],
-        emergencyContacts: pack.emergencyContacts || [],
-        notes: pack.notes || [],
-        checklist: pack.checklist || [],
-        downloadedAt,
-      };
+        const bundle: OfflineTripBundle = {
+          trip: summary,
+          itinerary,
+          staysAndTransport: pack.staysAndTransport || [],
+          documents: pack.documents || [],
+          emergencyContacts: pack.emergencyContacts || [],
+          notes: pack.notes || [],
+          checklist: pack.checklist || [],
+          downloadedAt,
+        };
 
-      // Save bundle
-      await writeTripBundleUnlocked(userId, tripId, bundle);
+        // Save bundle
+        await writeTripBundleUnlocked(userId, tripId, bundle);
 
-      // Update index list
-      const tripsKey = TRIPS_LIST_KEY(userId);
-      await withKeyLock(tripsKey, async () => {
-        const trips = await readTripsUnlocked(userId);
-        const existingIndex = trips.findIndex((t) => t.tripId === tripId);
-        if (existingIndex >= 0) {
-          trips[existingIndex] = summary;
-        } else {
-          trips.unshift(summary);
-        }
-        await writeTripsUnlocked(userId, trips);
+        // Update index list
+        const tripsKey = TRIPS_LIST_KEY(userId);
+        await withKeyLock(tripsKey, async () => {
+          const trips = await readTripsUnlocked(userId);
+          const existingIndex = trips.findIndex((t) => t.tripId === tripId);
+          if (existingIndex >= 0) {
+            trips[existingIndex] = summary;
+          } else {
+            trips.unshift(summary);
+          }
+          await writeTripsUnlocked(userId, trips);
+        });
       });
     });
   },
@@ -258,54 +322,73 @@ export const offlineStorage = {
     const tripsKey = TRIPS_LIST_KEY(userId);
 
     await withKeyLock(bundleKey, async () => {
-      try {
-        await AsyncStorage.removeItem(bundleKey);
-        await AsyncStorage.removeItem(syncKey);
+      await withKeyLock(syncKey, async () => {
+        try {
+          await AsyncStorage.removeItem(bundleKey);
+          await AsyncStorage.removeItem(syncKey);
 
-        await withKeyLock(tripsKey, async () => {
-          const trips = await readTripsUnlocked(userId);
-          const updated = trips.filter((t) => t.tripId !== tripId);
-          await writeTripsUnlocked(userId, updated);
-        });
-      } catch (err) {
-        console.error('Failed to delete offline trip:', err);
-      }
+          await withKeyLock(tripsKey, async () => {
+            const trips = await readTripsUnlocked(userId);
+            const updated = trips.filter((t) => t.tripId !== tripId);
+            await writeTripsUnlocked(userId, updated);
+          });
+        } catch (err) {
+          console.error('Failed to delete offline trip:', err);
+        }
+      });
     });
   },
 
   /**
    * Update a place note locally while offline.
+   * Atomic operation: queues sync first, then writes bundle. If bundle fails, rolls back queue.
    * Returns true on success, false on failure.
    */
   async updatePlaceNoteLocal(userId: string, tripId: string, placeId: string, note: string): Promise<boolean> {
     if (!userId || !tripId || !placeId) return false;
-    const key = TRIP_BUNDLE_KEY(userId, tripId);
+    const bundleKey = TRIP_BUNDLE_KEY(userId, tripId);
+    const syncKey = PENDING_SYNC_KEY(userId, tripId);
 
-    return withKeyLock(key, async () => {
-      try {
-        const bundle = await readTripBundleUnlocked(userId, tripId);
-        if (!bundle || !Array.isArray(bundle.itinerary)) return false;
+    return withKeyLock(bundleKey, async () => {
+      return withKeyLock(syncKey, async () => {
+        try {
+          const bundle = await readTripBundleUnlocked(userId, tripId);
+          if (!bundle || !Array.isArray(bundle.itinerary)) return false;
 
-        const place = bundle.itinerary.find((p: any) => p && p.id === placeId);
-        if (!place) return false;
+          const place = bundle.itinerary.find((p: any) => p && p.id === placeId);
+          if (!place) return false;
 
-        place.note = note;
-        await writeTripBundleUnlocked(userId, tripId, bundle);
+          const uniqueSuffix = Math.random().toString(36).substring(2, 8);
+          const syncItem: PendingSyncItem = {
+            id: `${placeId}_note_${Date.now()}_${uniqueSuffix}`,
+            tripId,
+            type: 'place_note',
+            payload: { placeId, note },
+            timestamp: new Date().toISOString(),
+            attempts: 0,
+            status: 'pending',
+          };
 
-        const uniqueSuffix = Math.random().toString(36).substring(2, 8);
-        await this.queuePendingSync(userId, tripId, {
-          id: `${placeId}_note_${Date.now()}_${uniqueSuffix}`,
-          tripId,
-          type: 'place_note',
-          payload: { placeId, note },
-          timestamp: new Date().toISOString(),
-        });
+          // 1. Queue pending sync first under lock
+          const queue = await readQueueUnlocked(userId, tripId);
+          queue.push(syncItem);
+          await writeQueueUnlocked(userId, tripId, queue);
 
-        return true;
-      } catch (err) {
-        console.error('Failed to update place note locally:', err);
-        return false;
-      }
+          // 2. Write bundle; if writing bundle fails, rollback the queued item
+          try {
+            place.note = note;
+            await writeTripBundleUnlocked(userId, tripId, bundle);
+            return true;
+          } catch (bundleErr) {
+            const rollbackQueue = queue.filter((i) => i.id !== syncItem.id);
+            await writeQueueUnlocked(userId, tripId, rollbackQueue).catch(() => {});
+            throw bundleErr;
+          }
+        } catch (err) {
+          console.error('Failed to update place note locally:', err);
+          return false;
+        }
+      });
     });
   },
 
@@ -347,6 +430,51 @@ export const offlineStorage = {
         }
       } catch (err) {
         console.error('Failed to clear pending sync queue:', err);
+      }
+    });
+  },
+
+  /**
+   * Record explicitly failed sync attempts.
+   * Increments attempts counter; if attempts >= 3, moves item to 'needs_attention'.
+   */
+  async recordSyncFailures(userId: string, tripId: string, failedIds: string[]): Promise<PendingSyncItem[]> {
+    if (!userId || !tripId || !failedIds || failedIds.length === 0) return [];
+    const key = PENDING_SYNC_KEY(userId, tripId);
+    return withKeyLock(key, async () => {
+      try {
+        const queue = await readQueueUnlocked(userId, tripId);
+        const failedSet = new Set(failedIds);
+        for (const item of queue) {
+          if (failedSet.has(item.id)) {
+            item.attempts = (item.attempts || 0) + 1;
+            if (item.attempts >= 3) {
+              item.status = 'needs_attention';
+            }
+          }
+        }
+        await writeQueueUnlocked(userId, tripId, queue);
+        return queue;
+      } catch (err) {
+        console.error('Failed to record sync failures:', err);
+        return [];
+      }
+    });
+  },
+
+  /**
+   * Discard a pending sync item manually from the queue.
+   */
+  async discardPendingSyncItem(userId: string, tripId: string, itemId: string): Promise<void> {
+    if (!userId || !tripId || !itemId) return;
+    const key = PENDING_SYNC_KEY(userId, tripId);
+    await withKeyLock(key, async () => {
+      try {
+        const queue = await readQueueUnlocked(userId, tripId);
+        const remaining = queue.filter((item) => item.id !== itemId);
+        await writeQueueUnlocked(userId, tripId, remaining);
+      } catch (err) {
+        console.error('Failed to discard pending sync item:', err);
       }
     });
   },

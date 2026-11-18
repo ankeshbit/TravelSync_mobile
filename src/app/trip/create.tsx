@@ -1,5 +1,5 @@
 import { getErrorMessage } from '@/api/client';
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Text,
   ScrollView,
@@ -14,6 +14,7 @@ import { useCreateTrip } from '@/hooks/useTrips';
 import { validateTripForm, buildDefaultDates, dateStringToISO } from '@/utils/tripValidation';
 import { parseAmount } from '@/utils/money';
 import { DatePickerField } from '@/components/common/DatePickerField';
+import { parseCalendarDate } from '@/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/common/Input';
@@ -38,17 +39,31 @@ export default function CreateTripScreen() {
   const [endDate, setEndDate] = useState(dates.end);
   const [budget, setBudget] = useState('10000');
   const [currency, setCurrency] = useState('INR');
+  const currencyTouchedRef = useRef(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!firebaseUser?.uid) return;
-    AsyncStorage.getItem(`user_prefs_${firebaseUser.uid}`).then((saved) => {
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed.preferredCurrency) setCurrency(parsed.preferredCurrency);
-        } catch {}
-      }
-    });
+    let cancelled = false;
+
+    AsyncStorage.getItem(`user_prefs_${firebaseUser.uid}`)
+      .then((saved) => {
+        if (cancelled || currencyTouchedRef.current) return;
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.preferredCurrency && !currencyTouchedRef.current) {
+              setCurrency(parsed.preferredCurrency);
+            }
+          } catch {}
+        }
+      })
+      .catch((err) => {
+        console.warn('[createTrip] Failed to load preferred currency:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [firebaseUser?.uid]);
 
   const handleCreate = async () => {
@@ -123,7 +138,7 @@ export default function CreateTripScreen() {
               label="End Date"
               value={endDate}
               onChange={setEndDate}
-              minimumDate={startDate ? new Date(startDate) : undefined}
+              minimumDate={startDate ? (parseCalendarDate(startDate) ?? undefined) : undefined}
             />
           </View>
         </View>
@@ -141,7 +156,10 @@ export default function CreateTripScreen() {
             label="Currency"
             placeholder="INR"
             value={currency}
-            onChangeText={setCurrency}
+            onChangeText={(val) => {
+              currencyTouchedRef.current = true;
+              setCurrency(val);
+            }}
             containerStyle={{ flex: 1, marginLeft: 8 }}
           />
         </View>

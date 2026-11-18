@@ -74,6 +74,7 @@ export interface Trip {
   expenses?: Expense[];
   activities?: Activity[];
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TripSummary {

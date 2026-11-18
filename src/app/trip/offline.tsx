@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -95,8 +95,11 @@ export default function OfflineTripScreen() {
     };
   }, [storageUserId, tripId, refreshKey]);
 
+  const isOperationInProgressRef = useRef(false);
+
   const handleDownloadTrip = async (isRefresh = false) => {
-    if (!storageUserId || !tripId) return;
+    if (isOperationInProgressRef.current || downloading || syncing || !storageUserId || !tripId) return;
+    isOperationInProgressRef.current = true;
     setDownloading(true);
     try {
       const pack = await getOfflineTripPack(tripId);
@@ -115,19 +118,26 @@ export default function OfflineTripScreen() {
       );
     } finally {
       setDownloading(false);
+      isOperationInProgressRef.current = false;
     }
   };
 
   const handleSyncPending = async () => {
-    if (!storageUserId || !tripId || pendingQueue.length === 0 || syncing) return;
+    const itemsToSend = pendingQueue.filter((item) => item.status !== 'needs_attention');
+    if (isOperationInProgressRef.current || downloading || syncing || !storageUserId || !tripId || itemsToSend.length === 0) return;
+    isOperationInProgressRef.current = true;
     setSyncing(true);
     try {
-      const response = await syncOfflineChanges(tripId, pendingQueue);
-      const normalized = normalizeSyncResult(response, pendingQueue);
+      const response = await syncOfflineChanges(tripId, itemsToSend);
+      const normalized = normalizeSyncResult(response, itemsToSend);
 
       if (normalized.syncedIds.length > 0) {
         // Only remove successfully acknowledged items from the pending queue
         await offlineStorage.clearPendingSyncQueue(storageUserId, tripId, normalized.syncedIds);
+      }
+
+      if (normalized.explicitlyFailedIds && normalized.explicitlyFailedIds.length > 0) {
+        await offlineStorage.recordSyncFailures(storageUserId, tripId, normalized.explicitlyFailedIds);
       }
 
       // Invalidate live React Query keys for places and details
@@ -160,7 +170,27 @@ export default function OfflineTripScreen() {
       );
     } finally {
       setSyncing(false);
+      isOperationInProgressRef.current = false;
     }
+  };
+
+  const handleDiscardPendingItem = (item: PendingSyncItem) => {
+    if (!storageUserId || !tripId) return;
+    Alert.alert(
+      'Discard Offline Change',
+      'Discard this change? It will not be synced to the server.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: async () => {
+            await offlineStorage.discardPendingSyncItem(storageUserId, tripId, item.id);
+            setRefreshKey((k) => k + 1);
+          },
+        },
+      ]
+    );
   };
 
   const handleOpenNoteModal = (place: any) => {
@@ -246,9 +276,9 @@ export default function OfflineTripScreen() {
 
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <TouchableOpacity
-                style={styles.refreshBtn}
+                style={[styles.refreshBtn, (downloading || syncing) && { opacity: 0.6 }]}
                 onPress={() => handleDownloadTrip(true)}
-                disabled={downloading}
+                disabled={downloading || syncing}
               >
                 {downloading ? (
                   <ActivityIndicator size="small" color={Theme.colors.accent} />
@@ -260,18 +290,20 @@ export default function OfflineTripScreen() {
                 )}
               </TouchableOpacity>
 
-              {pendingQueue.length > 0 ? (
+              {pendingQueue.filter((i) => i.status !== 'needs_attention').length > 0 ? (
                 <TouchableOpacity
-                  style={styles.syncBtn}
+                  style={[styles.syncBtn, (downloading || syncing) && { opacity: 0.6 }]}
                   onPress={handleSyncPending}
-                  disabled={syncing}
+                  disabled={syncing || downloading}
                 >
                   {syncing ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <>
                       <Ionicons name="sync" size={13} color="#FFFFFF" />
-                      <Text style={styles.syncBtnText}>Sync ({pendingQueue.length})</Text>
+                      <Text style={styles.syncBtnText}>
+                        Sync ({pendingQueue.filter((i) => i.status !== 'needs_attention').length})
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -286,6 +318,37 @@ export default function OfflineTripScreen() {
           <Text style={styles.downloadedAt}>
             Pack downloaded: {formatDate(tripBundle.downloadedAt)}
           </Text>
+
+          {/* Needs Attention Items */}
+          {pendingQueue.filter((i) => i.status === 'needs_attention').length > 0 && (
+            <View style={styles.needsAttentionBox}>
+              <View style={styles.needsAttentionHeader}>
+                <Ionicons name="alert-circle" size={15} color="#F87171" />
+                <Text style={styles.needsAttentionTitle}>Sync Failed — Action Needed</Text>
+              </View>
+              {pendingQueue
+                .filter((i) => i.status === 'needs_attention')
+                .map((item) => (
+                  <View key={item.id} style={styles.needsAttentionItem}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.needsAttentionItemText} numberOfLines={2}>
+                        {item.type === 'place_note' ? `Note: "${item.payload?.note || ''}"` : item.type}
+                      </Text>
+                      <Text style={styles.needsAttentionAttemptsText}>
+                        Failed {item.attempts || 3} times on server
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.discardBtn}
+                      onPress={() => handleDiscardPendingItem(item)}
+                      disabled={downloading || syncing}
+                    >
+                      <Text style={styles.discardBtnText}>Discard</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+            </View>
+          )}
         </View>
 
         {/* Tab Switcher */}
@@ -1058,5 +1121,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Theme.colors.accent,
     marginBottom: 16,
+  },
+  needsAttentionBox: {
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  needsAttentionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  needsAttentionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F87171',
+  },
+  needsAttentionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  needsAttentionItemText: {
+    fontSize: 12,
+    color: Theme.colors.textPrimary,
+  },
+  needsAttentionAttemptsText: {
+    fontSize: 10,
+    color: Theme.colors.textMuted,
+    marginTop: 2,
+  },
+  discardBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderRadius: 4,
+  },
+  discardBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#F87171',
   },
 });

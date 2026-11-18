@@ -11,38 +11,28 @@ describe('geocodePlace', () => {
     jest.clearAllMocks();
   });
 
-  it('returns empty object if query is empty', async () => {
-    const result = await geocodePlace('   ');
-    expect(result).toEqual({});
-    expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  it('returns empty object if address is empty, even when destination fallback is provided', async () => {
+    const resultWithFallback = await geocodePlace('   ', 'Tokyo, Japan');
+    expect(resultWithFallback).toEqual({});
+    expect(Location.geocodeAsync).not.toHaveBeenCalled();
+
+    const resultEmpty = await geocodePlace('');
+    expect(resultEmpty).toEqual({});
+    expect(Location.geocodeAsync).not.toHaveBeenCalled();
   });
 
-  it('returns empty object if permission is denied', async () => {
-    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
-      status: 'denied',
-    });
-
-    const result = await geocodePlace('Eiffel Tower');
-    expect(result).toEqual({});
-  });
-
-  it('returns lat and lng when geocoding succeeds', async () => {
-    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
-      status: 'granted',
-    });
+  it('does not request location permissions and returns coordinates when geocoding succeeds', async () => {
     (Location.geocodeAsync as jest.Mock).mockResolvedValueOnce([
       { latitude: 48.8584, longitude: 2.2945 },
     ]);
 
     const result = await geocodePlace('Eiffel Tower', 'Paris');
     expect(result).toEqual({ lat: 48.8584, lng: 2.2945 });
+    expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
     expect(Location.geocodeAsync).toHaveBeenCalledWith('Eiffel Tower, Paris');
   });
 
   it('falls back gracefully to empty object when geocoding throws (network/service failure)', async () => {
-    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
-      status: 'granted',
-    });
     (Location.geocodeAsync as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
 
     const result = await geocodePlace('Unknown place');
@@ -50,9 +40,6 @@ describe('geocodePlace', () => {
   });
 
   it('tries fallback query if combined query returns no results', async () => {
-    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({
-      status: 'granted',
-    });
     // First call (combined) returns []
     (Location.geocodeAsync as jest.Mock).mockResolvedValueOnce([]);
     // Second call (fallback) returns coordinates

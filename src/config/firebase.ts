@@ -23,7 +23,10 @@ if (Platform.OS === 'web') {
     if (e?.code === 'auth/already-initialized') {
       auth = getAuth(app);
     } else {
-      console.warn('[Firebase] Native auth initialization failed, falling back to getAuth:', e?.message || e);
+      console.error(
+        '[Firebase] CRITICAL: Native auth persistence initialization failed! Falling back to non-persistent getAuth. Sessions will NOT persist across app restarts:',
+        e?.message || e
+      );
       auth = getAuth(app);
     }
   }

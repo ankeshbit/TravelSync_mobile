@@ -27,3 +27,37 @@ describe('formatDate', () => {
   });
   it('returns empty for null', () => expect(formatDate(null)).toBe(''));
 });
+
+describe('dateUtils across extreme timezones', () => {
+  const originalTZ = process.env.TZ;
+
+  afterEach(() => {
+    process.env.TZ = originalTZ;
+  });
+
+  it('parses calendar date correctly under Pacific/Auckland', () => {
+    process.env.TZ = 'Pacific/Auckland';
+    const d = parseCalendarDate('2026-12-25');
+    expect(d).not.toBeNull();
+    expect(d!.getDate()).toBe(25);
+    expect(d!.getMonth()).toBe(11);
+    expect(d!.getFullYear()).toBe(2026);
+  });
+
+  it('parses calendar date correctly under Pacific/Pago_Pago', () => {
+    process.env.TZ = 'Pacific/Pago_Pago';
+    const d = parseCalendarDate('2026-12-25');
+    expect(d).not.toBeNull();
+    expect(d!.getDate()).toBe(25);
+    expect(d!.getMonth()).toBe(11);
+    expect(d!.getFullYear()).toBe(2026);
+  });
+
+  it('calculates trip days accurately under extreme timezones', () => {
+    process.env.TZ = 'Pacific/Auckland';
+    expect(calculateTripDays('2026-01-01', '2026-01-05')).toBe(5);
+
+    process.env.TZ = 'Pacific/Pago_Pago';
+    expect(calculateTripDays('2026-01-01', '2026-01-05')).toBe(5);
+  });
+});

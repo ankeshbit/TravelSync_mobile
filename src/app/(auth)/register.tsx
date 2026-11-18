@@ -63,7 +63,13 @@ export default function RegisterScreen() {
     setValidationError(null);
     setLoadingGoogle(true);
     try {
-      await loginWithGoogle();
+      const user = await loginWithGoogle();
+      if (!user) return;
+      if (user.emailVerified) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/verify-email');
+      }
     } catch {
       // Error handled by AuthContext
     } finally {

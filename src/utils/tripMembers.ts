@@ -8,6 +8,14 @@ export type MemberLike = {
 };
 
 /**
+ * Returns a stable identifier for a member object across different schemas.
+ */
+export function getMemberId(m?: MemberLike | null): string {
+  if (!m) return '';
+  return m.userId || m.user?.id || m.id || '';
+}
+
+/**
  * Deduplicate a list of trip members and filter out the owner if ownerId is provided.
  * Ensures no duplicate members appear by userId or id.
  */
@@ -24,7 +32,7 @@ export function filterTripMembers<T extends MemberLike>(
 
   for (const m of members) {
     if (!m) continue;
-    const uid = m.userId || m.user?.id || m.id;
+    const uid = getMemberId(m);
     if (!uid) continue;
 
     // Exclude trip owner from the non-owner member list

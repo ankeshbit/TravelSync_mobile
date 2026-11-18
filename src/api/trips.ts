@@ -169,6 +169,7 @@ export interface OfflineSyncResult {
 export interface NormalizedSyncResult {
   syncedIds: string[];
   failedIds: string[];
+  explicitlyFailedIds?: string[];
   syncedCount: number;
   failedCount: number;
   isFullSuccess: boolean;
@@ -187,6 +188,7 @@ export function normalizeSyncResult(
 ): NormalizedSyncResult {
   const syncedSet = new Set<string>();
   const failedSet = new Set<string>();
+  const explicitFailedSet = new Set<string>();
   const errors: Record<string, string> = {};
 
   if (data && typeof data === 'object') {
@@ -202,6 +204,7 @@ export function normalizeSyncResult(
               syncedSet.add(id);
             } else if ((item as any).success === false || (item as any).failed === true || (item as any).error) {
               failedSet.add(id);
+              explicitFailedSet.add(id);
               if ((item as any).error) {
                 errors[id] = String((item as any).error);
               }
@@ -230,6 +233,7 @@ export function normalizeSyncResult(
         for (const id of arr) {
           if (typeof id === 'string' && id.trim()) {
             failedSet.add(id.trim());
+            explicitFailedSet.add(id.trim());
           }
         }
       }
@@ -239,6 +243,7 @@ export function normalizeSyncResult(
     if (raw.errors && typeof raw.errors === 'object' && !Array.isArray(raw.errors)) {
       for (const [id, msg] of Object.entries(raw.errors)) {
         failedSet.add(id);
+        explicitFailedSet.add(id);
         errors[id] = String(msg);
       }
     }
@@ -254,6 +259,7 @@ export function normalizeSyncResult(
   // Deduplicate and ensure no ID is in both synced and failed
   for (const syncedId of syncedSet) {
     failedSet.delete(syncedId);
+    explicitFailedSet.delete(syncedId);
   }
 
   // If there are partial acknowledgements, any unacknowledged submitted items are marked failed/unresolved
@@ -267,6 +273,7 @@ export function normalizeSyncResult(
 
   const syncedIds = Array.from(syncedSet);
   const failedIds = Array.from(failedSet);
+  const explicitlyFailedIds = Array.from(explicitFailedSet);
 
   const isFullSuccess = syncedIds.length > 0 && failedIds.length === 0;
   const isPartialSuccess = syncedIds.length > 0 && failedIds.length > 0;
@@ -275,6 +282,7 @@ export function normalizeSyncResult(
   return {
     syncedIds,
     failedIds,
+    explicitlyFailedIds,
     syncedCount: syncedIds.length,
     failedCount: failedIds.length,
     isFullSuccess,

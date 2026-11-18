@@ -9,19 +9,13 @@ export async function geocodePlace(
   destinationFallback?: string
 ): Promise<{ lat?: number; lng?: number }> {
   try {
-    const trimmedAddress = address.trim();
+    const trimmedAddress = address?.trim() || '';
+    if (!trimmedAddress) {
+      return {};
+    }
+
     const trimmedFallback = destinationFallback?.trim();
-
     const query = [trimmedAddress, trimmedFallback].filter(Boolean).join(', ');
-    if (!query) {
-      return {};
-    }
-
-    // Request foreground location permissions safely
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      return {};
-    }
 
     const results = await Location.geocodeAsync(query);
     if (results && results.length > 0) {

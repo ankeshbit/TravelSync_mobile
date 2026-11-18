@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUpdateTrip, useDeleteTrip } from '@/hooks/useTrips';
-import { markTripDeletedLocally } from '@/hooks/useTripSocket';
+import { markTripDeletedLocally, unmarkTripDeletedLocally } from '@/hooks/useTripSocket';
 import { DatePickerField } from '@/components/common/DatePickerField';
+import { parseCalendarDate } from '@/utils/dateUtils';
 import { validateTripForm, dateStringToISO } from '@/utils/tripValidation';
 import { parseAmount } from '@/utils/money';
 
@@ -78,6 +79,28 @@ function EditTripForm({ trip }: { trip: Trip }) {
   const [currency, setCurrency] = useState(trip.currency || 'INR');
   const [status, setStatus] = useState<TripStatus>(trip.status || 'planning');
   const [coverImageUrl, setCoverImageUrl] = useState(trip.coverImageUrl || '');
+
+  const initialUpdatedAtRef = useRef(trip.updatedAt);
+  const [hasServerConflict, setHasServerConflict] = useState(false);
+
+  useEffect(() => {
+    if (trip.updatedAt && initialUpdatedAtRef.current && trip.updatedAt !== initialUpdatedAtRef.current) {
+      setHasServerConflict(true);
+    }
+  }, [trip.updatedAt]);
+
+  const handleReloadServerValues = () => {
+    setName(trip.name || '');
+    setDestination(trip.destination || '');
+    setStartDate(trip.startDate ? trip.startDate.split('T')[0] : '');
+    setEndDate(trip.endDate ? trip.endDate.split('T')[0] : '');
+    setBudget(trip.budgetPerPerson ? String(trip.budgetPerPerson) : '0');
+    setCurrency(trip.currency || 'INR');
+    setStatus(trip.status || 'planning');
+    setCoverImageUrl(trip.coverImageUrl || '');
+    initialUpdatedAtRef.current = trip.updatedAt;
+    setHasServerConflict(false);
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -166,6 +189,7 @@ function EditTripForm({ trip }: { trip: Trip }) {
               Alert.alert('Deleted', 'Trip deleted successfully.');
               router.replace('/(tabs)');
             } catch (err: unknown) {
+              unmarkTripDeletedLocally(trip.id);
               Alert.alert('Error', getErrorMessage(err));
             }
           },
@@ -187,6 +211,20 @@ function EditTripForm({ trip }: { trip: Trip }) {
         <Text style={styles.subtitle}>
           Update details, dates, and budget for your travel group
         </Text>
+
+        {hasServerConflict && (
+          <View style={styles.conflictBanner}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.conflictTitle}>Trip Updated on Server</Text>
+              <Text style={styles.conflictText}>
+                This trip was modified elsewhere. Reload to view latest changes.
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.conflictBtn} onPress={handleReloadServerValues}>
+              <Text style={styles.conflictBtnText}>Reload</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <Input
           label="Trip Name"
@@ -215,7 +253,7 @@ function EditTripForm({ trip }: { trip: Trip }) {
               label="End Date"
               value={endDate}
               onChange={setEndDate}
-              minimumDate={startDate ? new Date(startDate) : undefined}
+              minimumDate={startDate ? (parseCalendarDate(startDate) ?? undefined) : undefined}
             />
           </View>
         </View>
@@ -399,5 +437,38 @@ const styles = StyleSheet.create({
     color: Theme.colors.textMuted,
     lineHeight: 16,
     marginBottom: 14,
+  },
+  conflictBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.3)',
+    marginBottom: 16,
+  },
+  conflictTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#D97706',
+    marginBottom: 2,
+  },
+  conflictText: {
+    fontSize: 11,
+    color: Theme.colors.textSecondary,
+    lineHeight: 15,
+  },
+  conflictBtn: {
+    backgroundColor: '#D97706',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  conflictBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

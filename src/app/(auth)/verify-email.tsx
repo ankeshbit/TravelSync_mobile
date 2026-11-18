@@ -73,9 +73,9 @@ export default function VerifyEmailScreen() {
         if (auth.currentUser) {
           await auth.currentUser.reload();
           if (auth.currentUser.emailVerified && isMountedRef.current && isPolling) {
-            isPolling = false;
             await auth.currentUser.getIdToken(true);
             await syncBackendUser();
+            isPolling = false;
             router.replace('/(tabs)');
           }
         }

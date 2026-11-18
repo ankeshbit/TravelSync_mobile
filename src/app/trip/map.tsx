@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
+import { TRIP_KEYS } from '@/constants/tripKeys';
 import {
   useTrip,
   useTripPlaces,
@@ -85,8 +87,12 @@ export default function TripMapScreen() {
   const [aiPlannerVisible, setAiPlannerVisible] = useState(false);
   const [aiBudget, setAiBudget] = useState('moderate');
   const [aiInterests, setAiInterests] = useState('');
+  const queryClient = useQueryClient();
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [savingPlace, setSavingPlace] = useState(false);
+  const [addedSuggestions, setAddedSuggestions] = useState<Set<string>>(new Set());
+  const addingSuggestionsRef = useRef<Set<string>>(new Set());
 
   // Calculate days list using safe calendar date math
   const computedDays = useMemo(() => {
@@ -139,6 +145,7 @@ export default function TripMapScreen() {
       return;
     }
 
+    setSavingPlace(true);
     try {
       const nextOrder = currentDayPlaces.length > 0
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
@@ -159,6 +166,8 @@ export default function TripMapScreen() {
       setAddPlaceModalVisible(false);
     } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
+    } finally {
+      setSavingPlace(false);
     }
   };
 
@@ -195,6 +204,7 @@ export default function TripMapScreen() {
   };
 
   const handleMovePlace = async (index: number, direction: 'up' | 'down') => {
+    if (reorderPlacesMutation.isPending) return;
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= currentDayPlaces.length) return;
 
@@ -208,9 +218,25 @@ export default function TripMapScreen() {
       orderIndex: idx,
     }));
 
+    // Optimistically update query cache with rollback on error
+    const previousPlaces = queryClient.getQueryData<Place[]>(TRIP_KEYS.places(tripId));
+    if (previousPlaces) {
+      const updateMap = new Map(updates.map((u) => [u.placeId, u.orderIndex]));
+      const nextPlaces = previousPlaces.map((p) => {
+        if (updateMap.has(p.id)) {
+          return { ...p, orderIndex: updateMap.get(p.id)! };
+        }
+        return p;
+      });
+      queryClient.setQueryData(TRIP_KEYS.places(tripId), nextPlaces);
+    }
+
     try {
       await reorderPlacesMutation.mutateAsync(updates);
     } catch (err: unknown) {
+      if (previousPlaces) {
+        queryClient.setQueryData(TRIP_KEYS.places(tripId), previousPlaces);
+      }
       Alert.alert('Error', getErrorMessage(err) || 'Failed to reorder places.');
     }
   };
@@ -234,6 +260,18 @@ export default function TripMapScreen() {
   };
 
   const handleAddAiPlaceToDay = async (sug: AiSuggestion) => {
+    const sugKey =
+      (sug as any).id ||
+      `${sug.title || sug.name || 'act'}_${sug.location || ''}_${activeDay}_${sug.category || ''}`;
+
+    if (addedSuggestions.has(sugKey) || addingSuggestionsRef.current.has(sugKey)) {
+      Alert.alert('Already Added', `"${sug.title || sug.name || 'Activity'}" is already in Day ${activeDay}.`);
+      return;
+    }
+
+    addingSuggestionsRef.current.add(sugKey);
+    setAddedSuggestions((prev) => new Set(prev).add(sugKey));
+
     try {
       const nextOrder = currentDayPlaces.length > 0
         ? Math.max(...currentDayPlaces.map((p) => p.orderIndex ?? 0)) + 1
@@ -253,15 +291,23 @@ export default function TripMapScreen() {
 
       Alert.alert('Added', `"${sug.title || sug.name}" added to Day ${activeDay}!`);
     } catch (err: unknown) {
+      addingSuggestionsRef.current.delete(sugKey);
+      setAddedSuggestions((prev) => {
+        const next = new Set(prev);
+        next.delete(sugKey);
+        return next;
+      });
       Alert.alert('Error', getErrorMessage(err));
+    } finally {
+      addingSuggestionsRef.current.delete(sugKey);
     }
   };
 
-  if (tripLoading || placesLoading) {
+  if ((tripLoading || placesLoading) && (!trip || !places)) {
     return <LoadingState message="Loading itinerary and map..." fullscreen />;
   }
 
-  if (tripError || !trip) {
+  if (tripError && !trip) {
     return (
       <ErrorState
         title="Failed to Load Trip"
@@ -272,12 +318,23 @@ export default function TripMapScreen() {
     );
   }
 
-  if (placesError) {
+  if (placesError && (!places || places.length === 0)) {
     return (
       <ErrorState
         title="Failed to Load Places"
         message={getErrorMessage(placesErrorObj) || 'Could not load itinerary places for this trip.'}
         onRetry={refetchPlaces}
+        fullscreen
+      />
+    );
+  }
+
+  if (!trip) {
+    return (
+      <ErrorState
+        title="Trip Not Found"
+        message="Could not load details for this trip."
+        onRetry={refetchTrip}
         fullscreen
       />
     );
@@ -314,6 +371,13 @@ export default function TripMapScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {(tripError || placesError) && trip ? (
+        <View style={styles.staleBanner}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#D97706" />
+          <Text style={styles.staleBannerText}>Couldn&apos;t refresh — showing cached copy</Text>
+        </View>
+      ) : null}
 
       {/* Day Tabs Horizontal Bar */}
       <View style={styles.dayTabsWrapper}>
@@ -437,19 +501,19 @@ export default function TripMapScreen() {
 
                       <View style={styles.reorderControls}>
                         <TouchableOpacity
-                          style={[styles.orderArrowBtn, isFirst && styles.orderArrowDisabled]}
+                          style={[styles.orderArrowBtn, (isFirst || reorderPlacesMutation.isPending) && styles.orderArrowDisabled]}
                           onPress={() => handleMovePlace(idx, 'up')}
-                          disabled={isFirst}
+                          disabled={isFirst || reorderPlacesMutation.isPending}
                         >
-                          <Ionicons name="chevron-up" size={14} color={isFirst ? Theme.colors.border : Theme.colors.textPrimary} />
+                          <Ionicons name="chevron-up" size={14} color={isFirst || reorderPlacesMutation.isPending ? Theme.colors.border : Theme.colors.textPrimary} />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                          style={[styles.orderArrowBtn, isLast && styles.orderArrowDisabled]}
+                          style={[styles.orderArrowBtn, (isLast || reorderPlacesMutation.isPending) && styles.orderArrowDisabled]}
                           onPress={() => handleMovePlace(idx, 'down')}
-                          disabled={isLast}
+                          disabled={isLast || reorderPlacesMutation.isPending}
                         >
-                          <Ionicons name="chevron-down" size={14} color={isLast ? Theme.colors.border : Theme.colors.textPrimary} />
+                          <Ionicons name="chevron-down" size={14} color={isLast || reorderPlacesMutation.isPending ? Theme.colors.border : Theme.colors.textPrimary} />
                         </TouchableOpacity>
                       </View>
 
@@ -535,7 +599,8 @@ export default function TripMapScreen() {
           <Button
             title="Save Place"
             onPress={handleSavePlace}
-            isLoading={addPlaceMutation.isPending}
+            isLoading={savingPlace || addPlaceMutation.isPending}
+            disabled={savingPlace || addPlaceMutation.isPending}
             style={{ flex: 1, marginLeft: 8 }}
           />
         </View>
@@ -1245,5 +1310,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: Theme.colors.accentText,
+  },
+  staleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.25)',
+  },
+  staleBannerText: {
+    fontSize: 12,
+    color: '#D97706',
+    fontWeight: '500',
   },
 });

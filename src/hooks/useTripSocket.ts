@@ -9,13 +9,26 @@ import { getUserPreferences } from '@/utils/userPreferences';
 import { TRIP_KEYS } from './useTrips';
 
 const locallyDeletedTripIds = new Set<string>();
+const exitedTripIds = new Set<string>();
 
 export function markTripDeletedLocally(tripId: string) {
   locallyDeletedTripIds.add(tripId);
 }
 
+export function unmarkTripDeletedLocally(tripId: string) {
+  locallyDeletedTripIds.delete(tripId);
+}
+
 export function isTripDeletedLocally(tripId: string): boolean {
   return locallyDeletedTripIds.has(tripId);
+}
+
+export function markTripExited(tripId: string) {
+  exitedTripIds.add(tripId);
+}
+
+export function isTripExited(tripId: string): boolean {
+  return exitedTripIds.has(tripId);
 }
 
 
@@ -64,15 +77,21 @@ export function useTripSocket(
       notifyLiveActivity: true,
     };
 
+    let isCancelled = false;
     if (auth.currentUser?.uid) {
-      getUserPreferences(auth.currentUser.uid).then((prefs) => {
-        userPrefsRef.notifyTripUpdates = prefs.notifyTripUpdates;
-        userPrefsRef.notifyExpenseAlerts = prefs.notifyExpenseAlerts;
-        userPrefsRef.notifyLiveActivity = prefs.notifyLiveActivity;
-        if (!prefs.notifyLiveActivity) {
-          setActiveMembers([]);
-        }
-      });
+      getUserPreferences(auth.currentUser.uid)
+        .then((prefs) => {
+          if (isCancelled) return;
+          userPrefsRef.notifyTripUpdates = prefs.notifyTripUpdates;
+          userPrefsRef.notifyExpenseAlerts = prefs.notifyExpenseAlerts;
+          userPrefsRef.notifyLiveActivity = prefs.notifyLiveActivity;
+          if (!prefs.notifyLiveActivity) {
+            setActiveMembers([]);
+          }
+        })
+        .catch((err) => {
+          console.warn('[useTripSocket] Failed to load preferences:', err);
+        });
     }
 
     const socketInstance = io(socketUrl, {
@@ -237,25 +256,24 @@ export function useTripSocket(
       }
     });
 
-    let hasExited = false;
-
     socketInstance.on('trip:deleted', () => {
-      if (hasExited || isTripDeletedLocally(tripId)) return;
-      hasExited = true;
+      if (isTripExited(tripId) || isTripDeletedLocally(tripId)) return;
+      markTripExited(tripId);
       Alert.alert('Trip Removed', 'This trip has been deleted by the owner.', [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },
       ]);
     });
 
     socketInstance.on('trip:removed', () => {
-      if (hasExited) return;
-      hasExited = true;
+      if (isTripExited(tripId)) return;
+      markTripExited(tripId);
       Alert.alert('Access Revoked', 'You have been removed from this trip.', [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },
       ]);
     });
 
     return () => {
+      isCancelled = true;
       socketInstance.removeAllListeners();
       socketInstance.disconnect();
       setIsConnected(false);

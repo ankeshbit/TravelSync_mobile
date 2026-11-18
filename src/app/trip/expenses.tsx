@@ -19,7 +19,7 @@ import {
   useTripMembers,
 } from '@/hooks/useTripDetails';
 import { useAuth } from '@/context/AuthContext';
-import { filterTripMembers } from '@/utils/tripMembers';
+import { filterTripMembers, getMemberId } from '@/utils/tripMembers';
 import { getErrorMessage } from '@/api/client';
 import { useTripSocket } from '@/hooks/useTripSocket';
 import { TripPresence } from '@/components/trips/TripPresence';
@@ -48,7 +48,7 @@ export default function TripExpensesScreen() {
   const tripId = id || paramTripId || '';
 
   const { user } = useAuth();
-  const { data: trip, isLoading: tripLoading } = useTrip(tripId);
+  const { data: trip, isLoading: tripLoading, refetch: refetchTrip } = useTrip(tripId);
   const {
     data: expenses = [],
     isLoading: expensesLoading,
@@ -76,11 +76,14 @@ export default function TripExpensesScreen() {
   const [selectedSplits, setSelectedSplits] = useState<string[]>([]);
   const [paidById, setPaidById] = useState<string>('');
 
-  const nonOwnerMembers = filterTripMembers(members, trip?.ownerId || trip?.owner?.id);
+  const ownerId = trip?.ownerId || trip?.owner?.id;
+  const nonOwnerMembers = filterTripMembers(members, ownerId);
   const allMembers = [
-    ...(trip?.owner ? [{ id: trip.owner.id, name: trip.owner.name, email: trip.owner.email, isOwner: true }] : []),
+    ...(ownerId
+      ? [{ id: ownerId, name: trip?.owner?.name || 'Owner', email: trip?.owner?.email || '', isOwner: true }]
+      : []),
     ...nonOwnerMembers.map((m: TripMember) => ({
-      id: m.userId || m.id,
+      id: getMemberId(m),
       name: m.user?.name || 'Member',
       email: m.user?.email || '',
       isOwner: false,
@@ -114,10 +117,17 @@ export default function TripExpensesScreen() {
 
   // Financial Stats
   const computedTotalExpenses = (() => {
-    if (currentCurrencyData && currentCurrencyData.totalExpenses !== undefined) {
-      return currentCurrencyData.totalExpenses;
+    if (currentCurrencyData) {
+      const rawTotal = currentCurrencyData.totalExpenses;
+      const coerced = typeof rawTotal === 'string' ? Number(rawTotal) : rawTotal;
+      if (typeof coerced === 'number' && Number.isFinite(coerced)) {
+        return coerced;
+      }
     }
-    return currentCurrencyExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    return currentCurrencyExpenses.reduce((sum, e) => {
+      const num = Number(e.amount);
+      return sum + (Number.isFinite(num) ? num : 0);
+    }, 0);
   })();
 
   const computedYourShare = (() => {
@@ -161,7 +171,7 @@ export default function TripExpensesScreen() {
   })();
 
   const onRefresh = async () => {
-    await Promise.all([refetchExpenses(), refetchBalances()]);
+    await Promise.all([refetchTrip(), refetchExpenses(), refetchBalances()]);
   };
 
   const handleOpenAddModal = () => {
@@ -170,6 +180,7 @@ export default function TripExpensesScreen() {
     setCategory('food');
     setPaidById(user?.id || trip?.ownerId || '');
     setSelectedSplits(allMembers.map((m) => m.id));
+    setModalCurrency('');
     setModalVisible(true);
   };
 
@@ -187,6 +198,7 @@ export default function TripExpensesScreen() {
 
   const handleAddExpense = async () => {
     const numAmount = parseAmount(amount);
+    const finalCurrency = (modalCurrency || activeCurrency).toUpperCase().trim();
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter an expense title.');
       return;
@@ -199,9 +211,16 @@ export default function TripExpensesScreen() {
       Alert.alert('Required', 'Please select who paid for this expense.');
       return;
     }
+    if (!selectedSplits || selectedSplits.length === 0) {
+      Alert.alert('Required', 'Please select at least one member to split the expense with.');
+      return;
+    }
+    if (finalCurrency.length !== 3) {
+      Alert.alert('Invalid Currency', 'Currency code must be exactly 3 letters (e.g. USD, EUR, INR).');
+      return;
+    }
 
     try {
-      const finalCurrency = (modalCurrency || activeCurrency).toUpperCase().trim();
       await addExpenseMutation.mutateAsync({
         title: title.trim(),
         amount: numAmount,
@@ -210,6 +229,10 @@ export default function TripExpensesScreen() {
         paidById,
         splitUserIds: selectedSplits,
       });
+
+      if (finalCurrency !== activeCurrency) {
+        setSelectedCurrency(finalCurrency);
+      }
 
       setModalVisible(false);
     } catch (err: unknown) {
@@ -244,9 +267,11 @@ export default function TripExpensesScreen() {
   const categoryTotals: Record<string, number> = {};
   const knownCatIds = new Set(EXPENSE_CATEGORIES.map((c) => c.id));
   currentCurrencyExpenses.forEach((e) => {
+    const val = Number(e.amount);
+    if (!Number.isFinite(val)) return;
     const raw = (e.category || 'other').toLowerCase();
     const cat = knownCatIds.has(raw) ? raw : 'other';
-    categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(e.amount);
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + val;
   });
 
   return (
@@ -375,7 +400,7 @@ export default function TripExpensesScreen() {
             <View style={styles.categoryGrid}>
               {EXPENSE_CATEGORIES.map((cat) => {
                 const catAmount = categoryTotals[cat.id] || 0;
-                if (catAmount === 0) return null;
+                if (catAmount === 0 || !Number.isFinite(catAmount)) return null;
                 return (
                   <View key={cat.id} style={styles.categoryChip}>
                     <Ionicons name={cat.icon as any} size={16} color={Theme.colors.accent} />

@@ -38,6 +38,21 @@ describe('parseAmount', () => {
   it('rejects trailing dot "50."', () => expect(parseAmount('50.')).toBeNull());
   it('rejects leading comma ",50"', () => expect(parseAmount(',50')).toBeNull());
   it('rejects trailing comma "50,"', () => expect(parseAmount('50,')).toBeNull());
+
+  // Half-cent decimal-safe rounding and upper bound
+  it('rounds half-cents safely without floating point truncation (1.005 -> 1.01)', () => {
+    expect(parseAmount(1.005)).toBe(1.01);
+    expect(parseAmount('1.005')).toBe(1.01);
+    expect(parseAmount(1.004)).toBe(1);
+    expect(parseAmount('1.004')).toBe(1);
+  });
+
+  it('enforces upper bound on parseAmount', () => {
+    expect(parseAmount(1_000_000_000)).toBe(1000000000);
+    expect(parseAmount(1_000_000_001)).toBeNull();
+    expect(parseAmount('1,000,000,000')).toBe(1000000000);
+    expect(parseAmount('1,000,000,001')).toBeNull();
+  });
 });
 
 describe('filterSettlementsForCurrency', () => {

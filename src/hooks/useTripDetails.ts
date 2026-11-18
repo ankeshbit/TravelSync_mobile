@@ -77,6 +77,12 @@ export function useLeaveTrip(tripId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.lists() });
       queryClient.invalidateQueries({ queryKey: TRIP_KEYS.summary() });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.detail(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.places(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.expenses(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.balances(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.members(tripId) });
+      queryClient.removeQueries({ queryKey: TRIP_KEYS.activity(tripId) });
     },
   });
 }

@@ -43,6 +43,19 @@ export function clearUserPreferencesMemoryCache(uid?: string): void {
 }
 
 /**
+ * Remove stored preferences and clear memory cache for a user.
+ */
+export async function clearUserPreferences(uid: string): Promise<void> {
+  if (!uid) return;
+  memoryCache.delete(uid);
+  try {
+    await AsyncStorage.removeItem(PREFS_KEY(uid));
+  } catch (err) {
+    console.warn('[userPreferences] Failed to clear stored preferences:', err);
+  }
+}
+
+/**
  * Safely load user preferences from AsyncStorage with key locking.
  */
 export async function getUserPreferences(uid: string): Promise<UserPreferences> {
@@ -135,6 +148,12 @@ export async function updateUserPreferences(
       await AsyncStorage.setItem(key, JSON.stringify(next));
     } catch (err) {
       console.error('[userPreferences] Failed to persist preferences:', err);
+      if (cached) {
+        memoryCache.set(uid, current);
+      } else {
+        memoryCache.delete(uid);
+      }
+      throw err;
     }
     return next;
   });

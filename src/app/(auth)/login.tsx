@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
+import { auth } from '@/config/firebase';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { GoogleButton } from '@/components/common/GoogleButton';
@@ -53,7 +54,9 @@ export default function LoginScreen() {
 
     try {
       await loginWithEmail(email, password);
-      router.replace('/(tabs)');
+      if (auth.currentUser?.emailVerified) {
+        router.replace('/(tabs)');
+      }
     } catch {
       // Error handled by AuthContext
     }

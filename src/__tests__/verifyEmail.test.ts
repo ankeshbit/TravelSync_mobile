@@ -106,6 +106,47 @@ describe('verifyEmail polling and timer logic', () => {
     warnSpy.mockRestore();
   });
 
+  it('continues polling on subsequent intervals if token/sync fails after verification is true', async () => {
+    let isPolling = true;
+    let syncAttempts = 0;
+    let redirected = false;
+
+    const mockSync = jest.fn().mockImplementation(async () => {
+      syncAttempts++;
+      if (syncAttempts === 1) {
+        throw new Error('Network error on sync');
+      }
+    });
+
+    const checkVerificationStatus = async () => {
+      if (!isPolling) return;
+      try {
+        // Assume verified
+        await mockSync();
+        isPolling = false;
+        redirected = true;
+      } catch {
+        // continues polling
+      }
+    };
+
+    const interval = setInterval(checkVerificationStatus, 5000);
+
+    // Poll 1: sync fails, polling is not disabled
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(syncAttempts).toBe(1);
+    expect(isPolling).toBe(true);
+    expect(redirected).toBe(false);
+
+    // Poll 2: sync succeeds, polling stops, redirect occurs
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(syncAttempts).toBe(2);
+    expect(isPolling).toBe(false);
+    expect(redirected).toBe(true);
+
+    clearInterval(interval);
+  });
+
   it('cleans up timers and does not trigger callbacks when component unmounts', async () => {
     let pollCount = 0;
     let isMounted = true;

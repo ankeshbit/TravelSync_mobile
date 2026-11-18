@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -99,6 +99,8 @@ export default function TripDetailsScreen() {
   const [loadingAi, setLoadingAi] = useState(false);
   // M5: Track added suggestion names to prevent duplicates
   const [addedSuggestions, setAddedSuggestions] = useState<Set<string>>(new Set());
+  const addingSuggestionsRef = useRef<Set<string>>(new Set());
+  const [savingPlace, setSavingPlace] = useState(false);
 
   const {
     data: trip,
@@ -155,6 +157,20 @@ export default function TripDetailsScreen() {
       return;
     }
 
+    const maxDays = trip?.startDate && trip?.endDate ? calculateTripDays(trip.startDate, trip.endDate) : 365;
+    const parsedDay = parseInt(placeDay, 10);
+    if (isNaN(parsedDay) || parsedDay < 1 || parsedDay > maxDays) {
+      Alert.alert('Invalid Day', `Day number must be between 1 and ${maxDays}.`);
+      return;
+    }
+
+    const parsedDuration = parseInt(placeDuration, 10);
+    if (isNaN(parsedDuration) || parsedDuration < 1 || parsedDuration > 1440) {
+      Alert.alert('Invalid Duration', 'Duration must be between 1 and 1440 minutes.');
+      return;
+    }
+
+    setSavingPlace(true);
     try {
       const coords = await geocodePlace(placeAddress.trim() || placeName.trim(), trip?.destination);
 
@@ -162,9 +178,9 @@ export default function TripDetailsScreen() {
         name: placeName.trim(),
         address: placeAddress.trim() || 'General area',
         ...(coords.lat !== undefined && coords.lng !== undefined ? { lat: coords.lat, lng: coords.lng } : {}),
-        dayNumber: parseInt(placeDay, 10) || 1,
+        dayNumber: parsedDay,
         category: placeCategory,
-        duration: parseInt(placeDuration, 10) || 60,
+        duration: parsedDuration,
         note: placeNote.trim(),
       });
 
@@ -174,6 +190,8 @@ export default function TripDetailsScreen() {
       setPlaceNote('');
     } catch (err: unknown) {
       Alert.alert('Error', getErrorMessage(err));
+    } finally {
+      setSavingPlace(false);
     }
   };
 
@@ -278,11 +296,18 @@ export default function TripDetailsScreen() {
   };
 
   const handleAddAiSuggestionToTrip = async (sug: AiSuggestion) => {
-    const sugKey = sug.title || sug.name || '';
-    if (addedSuggestions.has(sugKey)) {
-      Alert.alert('Already Added', `"${sugKey}" is already in the itinerary.`);
+    const sugKey =
+      (sug as any).id ||
+      `${sug.title || sug.name || 'activity'}_${sug.location || ''}_${sug.dayNumber || 1}_${sug.category || ''}`;
+
+    if (addedSuggestions.has(sugKey) || addingSuggestionsRef.current.has(sugKey)) {
+      Alert.alert('Already Added', `"${sug.title || sug.name || 'Activity'}" is already in the itinerary.`);
       return;
     }
+
+    addingSuggestionsRef.current.add(sugKey);
+    setAddedSuggestions((prev) => new Set(prev).add(sugKey));
+
     try {
       const coords = await geocodePlace(sug.location || sug.title || sug.name || '', trip?.destination);
 
@@ -295,22 +320,40 @@ export default function TripDetailsScreen() {
         duration: sug.duration || 60,
         note: sug.description || '',
       });
-      setAddedSuggestions((prev) => new Set(prev).add(sugKey));
       Alert.alert('Added', `"${sug.title || sug.name}" added to itinerary!`);
     } catch (err: unknown) {
+      addingSuggestionsRef.current.delete(sugKey);
+      setAddedSuggestions((prev) => {
+        const next = new Set(prev);
+        next.delete(sugKey);
+        return next;
+      });
       Alert.alert('Error', getErrorMessage(err));
+    } finally {
+      addingSuggestionsRef.current.delete(sugKey);
     }
   };
 
-  if (tripLoading) {
+  if (tripLoading && !trip) {
     return <LoadingState message="Loading trip details..." fullscreen />;
   }
 
-  if (tripError || !trip) {
+  if (tripError && !trip) {
     return (
       <ErrorState
         title="Trip Not Found"
         message="Could not load this trip. It may have been removed or you may lack membership permissions."
+        onRetry={onRefresh}
+        fullscreen
+      />
+    );
+  }
+
+  if (!trip) {
+    return (
+      <ErrorState
+        title="Trip Not Found"
+        message="Could not load this trip."
         onRetry={onRefresh}
         fullscreen
       />
@@ -355,6 +398,12 @@ export default function TripDetailsScreen() {
           />
         }
       >
+        {(tripError || placesError) && trip ? (
+          <View style={styles.staleBanner}>
+            <Ionicons name="cloud-offline-outline" size={14} color="#D97706" />
+            <Text style={styles.staleBannerText}>Couldn&apos;t refresh — showing cached copy</Text>
+          </View>
+        ) : null}
         {/* Hero Section: Render cover image banner if available, or compact header if no image */}
         {hasCoverImage ? (
           <View style={styles.heroContainerWithCover}>
@@ -833,7 +882,8 @@ export default function TripDetailsScreen() {
           <Button
             title="Save Stop"
             onPress={handleAddPlace}
-            isLoading={addPlaceMutation.isPending}
+            isLoading={savingPlace || addPlaceMutation.isPending}
+            disabled={savingPlace || addPlaceMutation.isPending}
             style={{ flex: 1, marginLeft: 8 }}
           />
         </View>
@@ -1411,5 +1461,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: Theme.colors.accentText,
+  },
+  staleBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.25)',
+  },
+  staleBannerText: {
+    fontSize: 12,
+    color: '#D97706',
+    fontWeight: '500',
   },
 });

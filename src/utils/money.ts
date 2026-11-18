@@ -12,19 +12,29 @@ export interface SettlementItem {
   currency?: string;
 }
 
+export const MAX_PARSE_AMOUNT = 1_000_000_000;
+
+/**
+ * Decimal-safe rounding to 2 decimal places.
+ * Avoids binary floating-point half-cent rounding errors (e.g. 1.005 -> 1.01).
+ */
+export function roundToTwoDecimals(num: number): number {
+  return Number(Math.round(Number(num + 'e+2')) + 'e-2');
+}
+
 /**
  * Parse an amount string or number safely.
  * Accepts both ',' and '.' as decimal separators.
  * Supports standard Western and Indian thousands group separators.
  * Rejects malformed values (e.g. '1,2,3', '1.2.3', '12..50', 'abc123', '--100').
  * Rejects negative numbers, multiple signs, non-numeric garbage, and empty strings.
- * Rounds to 2 decimal places.
+ * Rounds to 2 decimal places using decimal-safe rounding.
  */
 export function parseAmount(input: string | number | null | undefined): number | null {
   if (input === null || input === undefined) return null;
   if (typeof input === 'number') {
-    if (!Number.isFinite(input) || Number.isNaN(input) || input < 0) return null;
-    return Math.round(input * 100) / 100;
+    if (!Number.isFinite(input) || Number.isNaN(input) || input < 0 || input > MAX_PARSE_AMOUNT) return null;
+    return roundToTwoDecimals(input);
   }
 
   if (typeof input !== 'string') return null;
@@ -141,11 +151,11 @@ export function parseAmount(input: string | number | null | undefined): number |
   if (normalizedStr === null) return null;
 
   const num = Number(normalizedStr);
-  if (!Number.isFinite(num) || Number.isNaN(num) || num < 0) {
+  if (!Number.isFinite(num) || Number.isNaN(num) || num < 0 || num > MAX_PARSE_AMOUNT) {
     return null;
   }
 
-  return Math.round(num * 100) / 100;
+  return roundToTwoDecimals(num);
 }
 
 /**

@@ -19,6 +19,7 @@ import { getCurrentUser, logoutBackend } from '@/api/auth';
 import { User } from '@/types/auth';
 import { getErrorMessage } from '@/api/client';
 import { useNativeGoogleAuth } from '@/services/nativeGoogleAuth';
+import { clearUserPreferences } from '@/utils/userPreferences';
 
 interface AuthContextType {
   user: User | null;
@@ -239,6 +240,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setIsLoading(true);
     try {
+      const currentUid = firebaseUser?.uid;
+      if (currentUid) {
+        await clearUserPreferences(currentUid).catch(() => {});
+      }
+
       // Await backend logout with ~2s timeout BEFORE firebaseSignOut so token is still valid
       try {
         await Promise.race([
